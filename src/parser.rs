@@ -53,7 +53,7 @@ fn double(input: &str) -> IResult<&str, f64> {
 }
 
 /// Parse a quoted string, handling both single and double quotes, as well as escaped characters
-fn string(input: &str) -> IResult<&str, String> {
+fn string(input: &str) -> IResult<&str, Box<str>> {
     let (input, value) = alt((
         delimited(
             char('\''),
@@ -68,9 +68,13 @@ fn string(input: &str) -> IResult<&str, String> {
     ))
     .parse(input)?;
 
-    let value = value.map_or(String::new(), |s| {
-        s.replace("\\'", "'").replace("\\\"", "\"")
-    });
+    let value: Box<str> = match value {
+        None => Box::from(""),
+        Some(s) if s.contains("\\'") | s.contains("\\\"") => {
+            Box::from(s.replace("\\'", "'").replace("\\\"", "\""))
+        }
+        Some(s) => Box::from(s), // no escapes — zero copy from input into Arc
+    };
 
     Ok((input, value))
 }
@@ -373,10 +377,7 @@ mod tests {
 
         assert_eq!(
             parse_atom("'hello\\' world'    "),
-            Ok((
-                "",
-                Exp::Literal(Literal::String("hello' world".to_string()))
-            ))
+            Ok(("", Exp::Literal(Literal::String("hello' world".into()))))
         );
     }
 
@@ -606,7 +607,7 @@ mod tests {
                 Exp::and(
                     Exp::neg(Exp::fn_call(Function::new(
                         "startsWith",
-                        vec![Exp::Literal(Literal::String("hello".to_string()))]
+                        vec![Exp::Literal(Literal::String("hello".into()))]
                     ))),
                     Exp::or(
                         Exp::leq(Exp::Literal(Literal::Int(3)), Exp::Literal(Literal::Int(4))),
@@ -621,19 +622,19 @@ mod tests {
     fn test_string_literal() {
         assert_eq!(
             parse_literal("'hello world'"),
-            Ok(("", Literal::String("hello world".to_string())))
+            Ok(("", Literal::String("hello world".into())))
         );
         assert_eq!(
             parse_literal("\"hello world\""),
-            Ok(("", Literal::String("hello world".to_string())))
+            Ok(("", Literal::String("hello world".into())))
         );
         assert_eq!(
             parse_literal("'hello \\'world\\''"),
-            Ok(("", Literal::String("hello 'world'".to_string())))
+            Ok(("", Literal::String("hello 'world'".into())))
         );
         assert_eq!(
             parse_literal("\"hello \\\"world\\\"\""),
-            Ok(("", Literal::String("hello \"world\"".to_string())))
+            Ok(("", Literal::String("hello \"world\"".into())))
         );
     }
 
@@ -645,7 +646,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.inputs(),
-            vec![Exp::Literal(Literal::String("hello".to_string()))]
+            vec![Exp::Literal(Literal::String("hello".into()))]
         );
     }
 
@@ -665,7 +666,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.inputs(),
-            vec![Exp::Literal(Literal::String("hello".to_string()))]
+            vec![Exp::Literal(Literal::String("hello".into()))]
         );
     }
 
@@ -710,7 +711,7 @@ mod tests {
             vec![
                 Exp::fn_call(Function::new(
                     "length",
-                    vec![Exp::Literal(Literal::String("hello".to_string()))]
+                    vec![Exp::Literal(Literal::String("hello".into()))]
                 )),
                 Exp::Literal(Literal::Int(10))
             ]
@@ -725,7 +726,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.inputs(),
-            vec![Exp::Literal(Literal::String("hello".to_string()))]
+            vec![Exp::Literal(Literal::String("hello".into()))]
         );
     }
 
@@ -749,7 +750,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.inputs(),
-            vec![Exp::Literal(Literal::String(String::new()))]
+            vec![Exp::Literal(Literal::String("".into()))]
         );
     }
 }

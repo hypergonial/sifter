@@ -1,4 +1,7 @@
-use std::fmt::{Display, Write};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+};
 
 use nom::IResult;
 
@@ -19,7 +22,7 @@ pub enum Literal {
     Int(i64),
     Float(f64),
     Bool(bool),
-    String(String),
+    String(Box<str>),
 }
 
 impl Literal {
@@ -45,7 +48,7 @@ impl TryFrom<serde_json::Value> for Literal {
 
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
         match value {
-            serde_json::Value::String(s) => Ok(Self::String(s)),
+            serde_json::Value::String(s) => Ok(Self::String(Box::from(s))),
             serde_json::Value::Number(n) if n.is_i64() => {
                 Ok(Self::Int(n.as_i64().expect("Failed to parse integer")))
             }
@@ -62,12 +65,12 @@ impl TryFrom<serde_json::Value> for Literal {
 /// A variable name, with an optional index for array access.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarName {
-    name: String,
+    name: Box<str>,
     index: Option<usize>,
 }
 
 impl VarName {
-    pub fn new(name: impl Into<String>, index: Option<usize>) -> Self {
+    pub fn new(name: impl Into<Box<str>>, index: Option<usize>) -> Self {
         Self {
             name: name.into(),
             index,
@@ -113,20 +116,14 @@ impl VarAccess {
         &self.names
     }
 
-    /// Access the value denoted by this accessor from the given JSON value.
-    ///
-    /// # Returns
-    /// - `Ok(Some(Literal))` if the value was successfully accessed and converted to a `Literal`
-    /// - `Ok(None)` if the value was `null`
-    ///
-    /// # Errors
-    /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    #[expect(clippy::missing_panics_doc)]
-    pub fn access(&self, value: &serde_json::Value) -> Result<Option<Literal>, String> {
+    fn access_names(
+        names: &[VarName],
+        value: &serde_json::Value,
+    ) -> Result<Option<Literal>, String> {
         let mut current = value;
 
         // Reduce "current" by accessing each variable name in the access path
-        for var in &self.names {
+        for var in names {
             if let serde_json::Value::Object(o) = current {
                 current = o
                     .get(var.name())
@@ -148,8 +145,7 @@ impl VarAccess {
             }
         }
 
-        let var = self
-            .names
+        let var = names
             .last()
             .expect("Variable access must have at least one name");
 
@@ -182,6 +178,42 @@ impl VarAccess {
                 .map(Some)
                 .map_err(|e| format!("Failed to convert value at '{}': {e}", var.name())),
         }
+    }
+
+    /// Access the value denoted by this accessor from the given JSON value.
+    ///
+    /// # Returns
+    /// - `Ok(Some(Literal))` if the value was successfully accessed and converted to a `Literal`
+    /// - `Ok(None)` if the value was `null`
+    ///
+    /// # Errors
+    /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
+    pub fn access(&self, value: &serde_json::Value) -> Result<Option<Literal>, String> {
+        Self::access_names(&self.names, value)
+    }
+
+    /// Access the value denoted by this accessor from the given JSON value.
+    ///
+    /// # Returns
+    /// - `Ok(Some(Literal))` if the value was successfully accessed and converted to a `Literal`
+    /// - `Ok(None)` if the value was `null`
+    ///
+    /// # Errors
+    /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
+    pub fn access_from_bindings(
+        &self,
+        bindings: &HashMap<String, serde_json::Value>,
+    ) -> Result<Option<Literal>, String> {
+        if self.names.is_empty() {
+            return Ok(None);
+        }
+
+        let first_name = self.names[0].name();
+        let value = bindings
+            .get(first_name)
+            .ok_or_else(|| format!("Variable '{first_name}' not found in bindings"))?;
+
+        Self::access_names(&self.names[1..], value)
     }
 }
 
@@ -349,11 +381,12 @@ impl Function {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
 
-    #[test]
-    fn test_var_access() {
-        let value = serde_json::json!(
+    static TEST_VALUE_1: LazyLock<serde_json::Value> = LazyLock::new(|| {
+        serde_json::json!(
             {
                 "foo": {
                     "bar": [
@@ -362,10 +395,47 @@ mod tests {
                     ]
                 }
             }
-        );
+        )
+    });
 
+    static TEST_VALUE_2: LazyLock<serde_json::Value> = LazyLock::new(|| {
+        serde_json::json!(
+            {
+                "foo": {
+                    "bar": [
+                        {"baz": 42},
+                        {"baz": 43}
+                    ]
+                },
+                "arr": [1, 2, 3],
+                "null_value": null,
+                "string_value": "hello",
+                "bool_value": true,
+                "float_value": 3.145
+            }
+        )
+    });
+
+    #[test]
+    fn test_var_access() {
         let var_access = VarAccess::try_from("foo.bar[0].baz").unwrap();
-        let result = var_access.access(&value).unwrap();
+        let result = var_access.access(&TEST_VALUE_1).unwrap();
         assert_eq!(result, Some(Literal::Int(42)));
+    }
+
+    #[test]
+    fn test_var_access_from_bindings() {
+        let bindings = HashMap::from([
+            ("test".to_string(), TEST_VALUE_1.clone()),
+            ("other".to_string(), TEST_VALUE_2.clone()),
+        ]);
+
+        let var_access = VarAccess::try_from("test.foo.bar[1].baz").unwrap();
+        let result = var_access.access_from_bindings(&bindings).unwrap();
+        assert_eq!(result, Some(Literal::Int(43)));
+
+        let var_access = VarAccess::try_from("other.arr[1]").unwrap();
+        let result = var_access.access_from_bindings(&bindings).unwrap();
+        assert_eq!(result, Some(Literal::Int(2)));
     }
 }
