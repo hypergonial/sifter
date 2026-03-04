@@ -1,0 +1,38 @@
+[package]
+name = "sifter"
+version = "0.1.0"
+authors = ["hypergonial"]
+edition = "2024"
+rust-version = "1.93"
+
+[dependencies]
+nom = "8.0.0"
+regex = "1.12.3"
+serde_json = "1.0.149"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+enum_glob_use = "deny"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+significant_drop_tightening = { level = "allow", priority = 1 }
+module_name_repetitions = "allow"
+# This is just dumb
+must_use_candidate = "allow"
+# When impl Trait can be used in type aliases, remove this
+future_not_send = "allow"
+
+# Enable incremental compilation for dev builds to improve re-compilation time.
+[profile.dev]
+incremental = true
+
+# Enable LTO for release builds to reduce binary size.
+[profile.release]
+lto = true
