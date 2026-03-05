@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: stable
+  RUSTFLAGS: -D warnings # Fail on warnings
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: "Run tests"
+    steps:
+      - name: Setup | Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup | Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+
+      - name: Build | Compile Project
+        run: cargo build --verbose
+
+      - name: Run | Tests
+        run: cargo test --verbose
+
+  clippy:
+    runs-on: ubuntu-latest
+    name: "Run clippy"
+    steps:
+      - name: Setup | Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup | Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - name: Run | Clippy
+        run: cargo clippy --verbose
+
+  format:
+    runs-on: ubuntu-latest
+    name: "Check formatting"
+    steps:
+      - name: Setup | Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup | Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+
+      - name: Rustfmt Check
+        uses: actions-rust-lang/rustfmt@v1
