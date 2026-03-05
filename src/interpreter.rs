@@ -21,7 +21,7 @@ pub struct Env {
 }
 
 impl Env {
-    fn new(bindings: HashMap<Box<str>, serde_json::Value>) -> Self {
+    pub fn new(bindings: HashMap<Box<str>, serde_json::Value>) -> Self {
         Self {
             bindings,
             vtable: VTABLE.clone(),
@@ -70,6 +70,7 @@ fn expect_bool(value: Option<Cow<'_, Literal>>) -> Result<bool, EvalError> {
     )
 }
 
+#[expect(dead_code)]
 fn expect_string(value: Option<Cow<'_, Literal>>) -> Result<Arc<str>, EvalError> {
     expect_type(
         value,
@@ -81,6 +82,7 @@ fn expect_string(value: Option<Cow<'_, Literal>>) -> Result<Arc<str>, EvalError>
     )
 }
 
+#[expect(dead_code)]
 fn expect_int(value: Option<Cow<'_, Literal>>) -> Result<i64, EvalError> {
     expect_type(
         value,
@@ -92,6 +94,7 @@ fn expect_int(value: Option<Cow<'_, Literal>>) -> Result<i64, EvalError> {
     )
 }
 
+#[expect(dead_code)]
 fn expect_float(value: Option<Cow<'_, Literal>>) -> Result<f64, EvalError> {
     expect_type(
         value,
@@ -103,6 +106,7 @@ fn expect_float(value: Option<Cow<'_, Literal>>) -> Result<f64, EvalError> {
     )
 }
 
+#[expect(dead_code, clippy::needless_pass_by_value)]
 fn expect_null(value: Option<Cow<'_, Literal>>) -> Result<(), EvalError> {
     if value.is_none() {
         Ok(())
