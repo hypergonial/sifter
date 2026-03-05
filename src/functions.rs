@@ -9,23 +9,24 @@ pub enum FnCallError {
     RegexError { message: String },
 }
 
-pub type FnCallback = Box<dyn Fn(&[Literal]) -> Result<Literal, FnCallError> + Send + Sync>;
+pub type FnArgs<'a> = &'a [Option<Literal>];
+pub type FnResult = Result<Option<Literal>, FnCallError>;
+pub type FnCallback = fn(FnArgs<'_>) -> FnResult;
 
 pub type VTable = HashMap<&'static str, FnCallback>;
 
-pub(super) static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
-    let mut it: VTable = HashMap::new();
-    it.insert("startsWith", Box::new(starts_with));
-    it.insert("endsWith", Box::new(ends_with));
-    it.insert("contains", Box::new(contains));
-    it.insert("length", Box::new(length));
+pub static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
+    let it: VTable = HashMap::from([
+        ("matches", matches as FnCallback),
+        ("length", length),
+        ("startsWith", starts_with),
+        ("endsWith", ends_with),
+        ("contains", contains),
+    ]);
     it
 });
 
-fn string_unary(
-    inputs: &[Literal],
-    function: impl Fn(&str) -> Result<Literal, FnCallError>,
-) -> Result<Literal, FnCallError> {
+fn string_unary<'a>(inputs: FnArgs<'a>, function: impl Fn(&'a str) -> FnResult) -> FnResult {
     if inputs.len() != 1 {
         return Err(FnCallError::ArgumentCount {
             expected: 1,
@@ -34,17 +35,17 @@ fn string_unary(
     }
 
     match &inputs[0] {
-        Literal::String(s) => function(s),
+        Some(Literal::String(s)) => function(s),
         _ => Err(FnCallError::TypeError {
             message: "Expected a string".to_string(),
         }),
     }
 }
 
-fn string_binary(
-    inputs: &[Literal],
-    function: impl Fn(&str, &str) -> Result<Literal, FnCallError>,
-) -> Result<Literal, FnCallError> {
+fn string_binary<'a>(
+    inputs: FnArgs<'a>,
+    function: impl Fn(&'a str, &'a str) -> FnResult,
+) -> FnResult {
     if inputs.len() != 2 {
         return Err(FnCallError::ArgumentCount {
             expected: 2,
@@ -53,34 +54,40 @@ fn string_binary(
     }
 
     match (&inputs[0], &inputs[1]) {
-        (Literal::String(s), Literal::String(other)) => function(s, other),
+        (Some(Literal::String(s)), Some(Literal::String(other))) => function(s, other),
         _ => Err(FnCallError::TypeError {
             message: "Expected two strings".to_string(),
         }),
     }
 }
 
-fn length(inputs: &[Literal]) -> Result<Literal, FnCallError> {
-    string_unary(inputs, |s| Ok(Literal::Int(s.len() as i64)))
+fn length<'a>(inputs: FnArgs<'a>) -> FnResult {
+    string_unary(inputs, |s| Ok(Some(Literal::Int(s.len() as i64))))
 }
 
-fn starts_with(inputs: &[Literal]) -> Result<Literal, FnCallError> {
-    string_binary(inputs, |s, other| Ok(Literal::Bool(s.starts_with(other))))
+fn starts_with<'a>(inputs: FnArgs<'a>) -> FnResult {
+    string_binary(inputs, |s, other| {
+        Ok(Some(Literal::Bool(s.starts_with(other))))
+    })
 }
 
-fn ends_with(inputs: &[Literal]) -> Result<Literal, FnCallError> {
-    string_binary(inputs, |s, other| Ok(Literal::Bool(s.ends_with(other))))
+fn ends_with<'a>(inputs: FnArgs<'a>) -> FnResult {
+    string_binary(inputs, |s, other| {
+        Ok(Some(Literal::Bool(s.ends_with(other))))
+    })
 }
 
-fn contains(inputs: &[Literal]) -> Result<Literal, FnCallError> {
-    string_binary(inputs, |s, other| Ok(Literal::Bool(s.contains(other))))
+fn contains<'a>(inputs: FnArgs<'a>) -> FnResult {
+    string_binary(inputs, |s, other| {
+        Ok(Some(Literal::Bool(s.contains(other))))
+    })
 }
 
-fn matches(inputs: &[Literal]) -> Result<Literal, FnCallError> {
+fn matches<'a>(inputs: FnArgs<'a>) -> FnResult {
     string_binary(inputs, |s, pattern| {
         let re = regex::Regex::new(pattern).map_err(|e| FnCallError::RegexError {
             message: format!("Invalid regex pattern: {e}"),
         })?;
-        Ok(Literal::Bool(re.is_match(s)))
+        Ok(Some(Literal::Bool(re.is_match(s))))
     })
 }

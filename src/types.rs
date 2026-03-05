@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Write},
+    sync::Arc,
 };
 
 use nom::IResult;
@@ -22,7 +23,7 @@ pub enum Literal {
     Int(i64),
     Float(f64),
     Bool(bool),
-    String(Box<str>),
+    String(Arc<str>),
 }
 
 impl Literal {
@@ -48,7 +49,7 @@ impl TryFrom<serde_json::Value> for Literal {
 
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
         match value {
-            serde_json::Value::String(s) => Ok(Self::String(Box::from(s))),
+            serde_json::Value::String(s) => Ok(Self::String(s.into())),
             serde_json::Value::Number(n) if n.is_i64() => {
                 Ok(Self::Int(n.as_i64().expect("Failed to parse integer")))
             }
@@ -202,7 +203,7 @@ impl VarAccess {
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
     pub fn access_from_bindings(
         &self,
-        bindings: &HashMap<String, serde_json::Value>,
+        bindings: &HashMap<Box<str>, serde_json::Value>,
     ) -> Result<Option<Literal>, String> {
         if self.names.is_empty() {
             return Ok(None);
@@ -278,7 +279,7 @@ impl Exp {
     }
 
     #[inline]
-    pub const fn literal(lit: Literal) -> Self {
+    pub fn literal(lit: Literal) -> Self {
         Self::Literal(lit)
     }
 
@@ -426,8 +427,8 @@ mod tests {
     #[test]
     fn test_var_access_from_bindings() {
         let bindings = HashMap::from([
-            ("test".to_string(), TEST_VALUE_1.clone()),
-            ("other".to_string(), TEST_VALUE_2.clone()),
+            ("test".into(), TEST_VALUE_1.clone()),
+            ("other".into(), TEST_VALUE_2.clone()),
         ]);
 
         let var_access = VarAccess::try_from("test.foo.bar[1].baz").unwrap();
