@@ -1,12 +1,17 @@
 use std::{collections::HashMap, sync::LazyLock};
 
+use thiserror::Error;
+
+use crate::interpreter::EvalError;
+
 use super::types::Literal;
 
-pub enum FnCallError {
-    ArgumentCount { expected: usize, got: usize },
-    TypeError { message: String },
-    ValueError { message: String },
-    RegexError { message: String },
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("Error calling function '{fn_name}': {reason}")]
+pub struct FnCallError {
+    pub fn_name: String,
+    #[source]
+    pub reason: Box<EvalError>,
 }
 
 pub type FnArgs<'a> = &'a [Option<Literal>];
@@ -26,63 +31,92 @@ pub static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     it
 });
 
-fn string_unary<'a>(args: FnArgs<'a>, function: impl Fn(&'a str) -> FnResult) -> FnResult {
+fn string_unary<'a>(
+    fn_name: &'static str,
+    args: FnArgs<'a>,
+    function: impl Fn(&'a str) -> FnResult,
+) -> FnResult {
     if args.len() != 1 {
-        return Err(FnCallError::ArgumentCount {
-            expected: 1,
-            got: args.len(),
+        return Err(FnCallError {
+            fn_name: fn_name.to_string(),
+            reason: EvalError::ArgumentCount {
+                expected: 1,
+                got: args.len(),
+            }
+            .into(),
         });
     }
 
     match &args[0] {
         Some(Literal::String(s)) => function(s),
-        _ => Err(FnCallError::TypeError {
-            message: "Expected a string".to_string(),
+        _ => Err(FnCallError {
+            fn_name: fn_name.to_string(),
+            reason: EvalError::TypeError {
+                message: "Expected a string".to_string(),
+            }
+            .into(),
         }),
     }
 }
 
 fn string_binary<'a>(
+    fn_name: &'static str,
     args: FnArgs<'a>,
     function: impl Fn(&'a str, &'a str) -> FnResult,
 ) -> FnResult {
     if args.len() != 2 {
-        return Err(FnCallError::ArgumentCount {
-            expected: 2,
-            got: args.len(),
+        return Err(FnCallError {
+            fn_name: fn_name.to_string(),
+            reason: EvalError::ArgumentCount {
+                expected: 2,
+                got: args.len(),
+            }
+            .into(),
         });
     }
 
     match (&args[0], &args[1]) {
         (Some(Literal::String(s)), Some(Literal::String(other))) => function(s, other),
-        _ => Err(FnCallError::TypeError {
-            message: "Expected two strings".to_string(),
+        _ => Err(FnCallError {
+            fn_name: fn_name.to_string(),
+            reason: EvalError::TypeError {
+                message: "Expected two strings".to_string(),
+            }
+            .into(),
         }),
     }
 }
 
 fn length(args: FnArgs<'_>) -> FnResult {
-    string_unary(args, |s| Ok(Some(Literal::Int(s.len() as i64))))
+    string_unary("length", args, |s| Ok(Some(Literal::Int(s.len() as i64))))
 }
 
 fn starts_with(args: FnArgs<'_>) -> FnResult {
-    string_binary(args, |s, other| {
+    string_binary("startsWith", args, |s, other| {
         Ok(Some(Literal::Bool(s.starts_with(other))))
     })
 }
 
 fn ends_with(args: FnArgs<'_>) -> FnResult {
-    string_binary(args, |s, other| Ok(Some(Literal::Bool(s.ends_with(other)))))
+    string_binary("endsWith", args, |s, other| {
+        Ok(Some(Literal::Bool(s.ends_with(other))))
+    })
 }
 
 fn contains(args: FnArgs<'_>) -> FnResult {
-    string_binary(args, |s, other| Ok(Some(Literal::Bool(s.contains(other)))))
+    string_binary("contains", args, |s, other| {
+        Ok(Some(Literal::Bool(s.contains(other))))
+    })
 }
 
 fn matches(args: FnArgs<'_>) -> FnResult {
-    string_binary(args, |s, pattern| {
-        let re = regex::Regex::new(pattern).map_err(|e| FnCallError::RegexError {
-            message: format!("Invalid regex pattern: {e}"),
+    string_binary("matches", args, |s, pattern| {
+        let re = regex::Regex::new(pattern).map_err(|e| FnCallError {
+            fn_name: "matches".to_string(),
+            reason: EvalError::RegexError {
+                message: format!("Invalid regex pattern: {e}"),
+            }
+            .into(),
         })?;
         Ok(Some(Literal::Bool(re.is_match(s))))
     })

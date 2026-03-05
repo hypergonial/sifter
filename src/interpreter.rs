@@ -1,18 +1,30 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
+use thiserror::Error;
+
 use crate::{
     functions::{FnCallError, VTABLE, VTable},
-    types::{FunctionItem, VarAccess},
+    types::{FunctionItem, Type, VarAccess, VarAccessError},
 };
 
 use super::types::{Exp, Literal};
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EvalError {
-    VariableNotFound(String),
-    FunctionNotFound(String),
-    FnCallError(FnCallError),
-    TypeError(String),
-    ValueError(String),
+    #[error(transparent)]
+    VarAccess(#[from] VarAccessError),
+    #[error(transparent)]
+    FnCallError(#[from] FnCallError),
+    #[error("Undefined function: {fn_name}")]
+    FunctionNotFound { fn_name: String },
+    #[error("Type Error: {message}")]
+    TypeError { message: String },
+    #[error("Value Error: {message}")]
+    ValueError { message: String },
+    #[error("Regex Error: {message}")]
+    RegexError { message: String },
+    #[error("Argument Error: Expected {expected} arguments, but got {got}")]
+    ArgumentCount { expected: usize, got: usize },
 }
 
 pub struct Env {
@@ -26,6 +38,15 @@ impl Env {
             bindings,
             vtable: VTABLE.clone(),
         }
+    }
+
+    pub fn new_with_vtable(bindings: HashMap<Box<str>, serde_json::Value>, vtable: VTable) -> Self {
+        Self { bindings, vtable }
+    }
+
+    #[inline]
+    pub const fn bindings(&self) -> &HashMap<Box<str>, serde_json::Value> {
+        &self.bindings
     }
 }
 
@@ -47,13 +68,13 @@ fn expect_type<T>(
 
     value.map_or_else(
         || {
-            Err(EvalError::TypeError(format!(
-                "Expected {type_name}, got None"
-            )))
+            Err(EvalError::TypeError {
+                message: format!("Expected {type_name}, got null"),
+            })
         },
         |literal| {
-            extractor(literal).ok_or_else(|| {
-                EvalError::TypeError(format!("Expected {type_name}, got {literal:?}"))
+            extractor(literal).ok_or_else(|| EvalError::TypeError {
+                message: format!("Expected {type_name}, got {}", literal.type_name()),
             })
         },
     )
@@ -111,10 +132,12 @@ fn expect_null(value: Option<Cow<'_, Literal>>) -> Result<(), EvalError> {
     if value.is_none() {
         Ok(())
     } else {
-        Err(EvalError::TypeError(format!(
-            "Expected null, got {:?}",
-            value.as_deref()
-        )))
+        Err(EvalError::TypeError {
+            message: format!(
+                "Expected null, got {}",
+                value.as_deref().map_or(Type::Null, Literal::type_name)
+            ),
+        })
     }
 }
 
@@ -124,7 +147,7 @@ const fn out(literal: Literal) -> Result<Option<Cow<'static, Literal>>, EvalErro
     Ok(Some(Cow::Owned(literal)))
 }
 
-fn eval_not<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+fn eval_neg<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, EvalError> {
     let value = eval(exp, env)?.as_deref().is_some_and(bool::from);
     out(Literal::Bool(!value))
 }
@@ -169,12 +192,7 @@ fn eval_eq<'a>(
         (Some(Literal::Int(i1)), Some(Literal::Int(i2))) => out(Literal::Bool(i1 == i2)),
         (Some(Literal::String(s1)), Some(Literal::String(s2))) => out(Literal::Bool(s1 == s2)),
         (Some(Literal::Bool(b1)), Some(Literal::Bool(b2))) => out(Literal::Bool(b1 == b2)),
-        (None, _) | (_, None) => out(Literal::Bool(false)),
-        _ => Err(EvalError::TypeError(format!(
-            "Cannot compare values of different types: {:?} and {:?}",
-            value1.as_deref(),
-            value2.as_deref()
-        ))),
+        _ => out(Literal::Bool(false)),
     }
 }
 
@@ -210,11 +228,13 @@ fn eval_cmp<'a>(
             Cmp::Leq => f1 <= f2,
             Cmp::Geq => f1 >= f2,
         })),
-        _ => Err(EvalError::TypeError(format!(
-            "Cannot compare values of different types: {:?} and {:?}",
-            value1.as_deref(),
-            value2.as_deref()
-        ))),
+        _ => Err(EvalError::TypeError {
+            message: format!(
+                "Cannot compare values of different types: {} and {}",
+                value1.as_deref().map_or(Type::Null, Literal::type_name),
+                value2.as_deref().map_or(Type::Null, Literal::type_name)
+            ),
+        }),
     }
 }
 
@@ -223,7 +243,7 @@ fn eval_varaccess<'a>(
     env: &Env,
 ) -> Result<Option<Cow<'a, Literal>>, EvalError> {
     var.access_from_bindings(&env.bindings)
-        .map_err(EvalError::VariableNotFound)
+        .map_err(EvalError::VarAccess)
         .map(|opt| opt.map(Cow::Owned::<Literal>))
 }
 
@@ -234,7 +254,9 @@ fn eval_fncall<'a>(
     let func = env
         .vtable
         .get(function.name())
-        .ok_or_else(|| EvalError::FunctionNotFound(function.name().to_string()))?;
+        .ok_or_else(|| EvalError::FunctionNotFound {
+            fn_name: function.name().to_string(),
+        })?;
 
     let args: Vec<Option<Literal>> = function
         .args()
@@ -253,7 +275,7 @@ pub(super) fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal
         Exp::Literal(literal) => Ok(Some(Cow::Borrowed(literal))),
         Exp::Var(var) => eval_varaccess(var, env),
         Exp::FnCall(function) => eval_fncall(function, env),
-        Exp::Not(exp) => eval_not(exp, env),
+        Exp::Neg(exp) => eval_neg(exp, env),
         Exp::Or(exp1, exp2) => eval_or(exp1, exp2, env),
         Exp::And(exp1, exp2) => eval_and(exp1, exp2, env),
         Exp::Eq(exp1, exp2) => eval_eq(exp1, exp2, env),
@@ -262,5 +284,200 @@ pub(super) fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal
         Exp::Lt(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Lt),
         Exp::Geq(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Geq),
         Exp::Leq(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Leq),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::LazyLock;
+
+    use super::*;
+
+    static ENV: LazyLock<Env> = LazyLock::new(|| {
+        let bindings = HashMap::from([
+            ("x".into(), serde_json::json!(42)),
+            ("y".into(), serde_json::json!("hello")),
+            ("z".into(), serde_json::json!(true)),
+            (
+                "foo".into(),
+                serde_json::json!({
+                    "bar": 123,
+                    "baz": "world",
+                    "qux": {
+                        "nested": [
+                            1,
+                            2,
+                            3
+                        ]
+                    }
+                }),
+            ),
+        ]);
+        Env::new(bindings)
+    });
+
+    #[expect(clippy::type_complexity)]
+    static EXPS: LazyLock<[(&str, Result<Option<Literal>, EvalError>); 27]> = LazyLock::new(|| {
+        [
+            // Basic variable access
+            (
+                r#"startsWith(y, "hel") && z && foo.bar > 100"#,
+                Ok(Some(Literal::Bool(true))),
+            ),
+            // Accessing nested properties and comparing to a literal
+            (
+                r#"length(y) == 5 && foo.baz == "world""#,
+                Ok(Some(Literal::Bool(true))),
+            ),
+            // Regex match with anchors
+            (
+                r#"matches(y, "^h.*o$") && foo.qux.nested[1] == 2"#,
+                Ok(Some(Literal::Bool(true))),
+            ),
+            // Literal false negated
+            ("!false", Ok(Some(Literal::Bool(true)))),
+            // Truthy int (42) negated
+            ("!x", Ok(Some(Literal::Bool(false)))),
+            // Truthy non-empty string negated
+            ("!y", Ok(Some(Literal::Bool(false)))),
+            // Empty string is falsy — falls through to z
+            (r#""" || z"#, Ok(Some(Literal::Bool(true)))),
+            // Integer 0 is falsy — falls through to z
+            ("0 || z", Ok(Some(Literal::Bool(true)))),
+            // && returns RHS value (not just bool) when LHS is truthy — JS-like semantics
+            ("z && x", Ok(Some(Literal::Int(42)))),
+            // || returns first truthy value (LHS z, not RHS x)
+            ("z || x", Ok(Some(Literal::Bool(true)))),
+            // Short-circuit &&: false LHS skips evaluation of non-existent RHS variable
+            ("false && unknownVar", Ok(Some(Literal::Bool(false)))),
+            // Short-circuit ||: truthy LHS skips evaluation of non-existent RHS variable
+            ("z || unknownVar", Ok(Some(Literal::Bool(true)))),
+            // == with mismatched types returns false, not a TypeError
+            ("x == y", Ok(Some(Literal::Bool(false)))),
+            // != with mismatched types (int vs bool) returns true
+            ("x != z", Ok(Some(Literal::Bool(true)))),
+            // >= at the exact boundary
+            ("x >= 42", Ok(Some(Literal::Bool(true)))),
+            // <= at the exact boundary
+            ("x <= 42", Ok(Some(Literal::Bool(true)))),
+            // Array indexing: nested[0]=1 < nested[2]=3
+            (
+                "foo.qux.nested[0] < foo.qux.nested[2]",
+                Ok(Some(Literal::Bool(true))),
+            ),
+            // endsWith function
+            (r#"endsWith(y, "lo")"#, Ok(Some(Literal::Bool(true)))),
+            // contains — substring present
+            (r#"contains(y, "ell")"#, Ok(Some(Literal::Bool(true)))),
+            // contains — substring absent
+            (r#"contains(y, "xyz")"#, Ok(Some(Literal::Bool(false)))),
+            // ! applied directly to a function call
+            (r#"!matches(y, "^w")"#, Ok(Some(Literal::Bool(true)))),
+            // String literal on the LHS of ==
+            (r#""hello" == y"#, Ok(Some(Literal::Bool(true)))),
+            // Both || operands are false — no short-circuit, result is false
+            ("false || false", Ok(Some(Literal::Bool(false)))),
+            (
+                "x > y",
+                Err(EvalError::TypeError {
+                    message: "Cannot compare values of different types: integer and string"
+                        .to_string(),
+                }),
+            ),
+            (
+                "unknownFunc()",
+                Err(EvalError::FunctionNotFound {
+                    fn_name: "unknownFunc".to_string(),
+                }),
+            ),
+            (
+                "unknownVar",
+                Err(EvalError::VarAccess(VarAccessError::VariableNotFound {
+                    variable: "unknownVar".to_string(),
+                })),
+            ),
+            (
+                "length(42)",
+                Err(EvalError::FnCallError(FnCallError {
+                    fn_name: "length".to_string(),
+                    reason: EvalError::TypeError {
+                        message: "Expected a string".to_string(),
+                    }
+                    .into(),
+                })),
+            ),
+        ]
+    });
+
+    #[test]
+    fn test_exps() {
+        for (exp_str, expected) in &*EXPS {
+            println!("Testing expression: {exp_str}");
+            let exp = Exp::parse(exp_str).unwrap();
+            let result = eval(&exp, &ENV);
+            assert_eq!(
+                result.map(|o| o.map(Cow::into_owned)).as_ref(),
+                expected.as_ref()
+            );
+        }
+    }
+
+    #[test]
+    fn test_eval_literal() {
+        let exp = Exp::literal(Literal::Int(42));
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Int(42)));
+    }
+
+    #[test]
+    fn test_eval_var() {
+        let exp = Exp::varname("x").unwrap();
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Int(42)));
+
+        let exp = Exp::varname("y").unwrap();
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::String("hello".into())));
+
+        let exp = Exp::varname("foo.qux.nested[1]").unwrap();
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Int(2)));
+    }
+
+    #[test]
+    fn test_eval_fncall() {
+        let exp = Exp::fn_call(FunctionItem::new("length", [Exp::varname("y").unwrap()]));
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Int(5)));
+    }
+
+    #[test]
+    fn test_eval_neg() {
+        let exp = Exp::neg(Exp::varname("z").unwrap());
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Bool(false)));
+    }
+
+    #[test]
+    fn test_eval_and_or() {
+        let exp = Exp::and(Exp::varname("z").unwrap(), Exp::varname("x").unwrap());
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Int(42)));
+
+        let exp = Exp::or(Exp::varname("z").unwrap(), Exp::varname("x").unwrap());
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Bool(true)));
+    }
+
+    #[test]
+    fn test_eval_eq_neq() {
+        let exp = Exp::eq(Exp::varname("x").unwrap(), Exp::literal(Literal::Int(42)));
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Bool(true)));
+
+        let exp = Exp::neq(Exp::varname("x").unwrap(), Exp::literal(Literal::Int(42)));
+        let result = eval(&exp, &ENV).unwrap();
+        assert_eq!(result.as_deref(), Some(&Literal::Bool(false)));
     }
 }

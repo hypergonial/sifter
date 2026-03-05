@@ -5,7 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use nom::IResult;
+use nom::Finish;
+use thiserror::Error;
 
 use crate::interpreter::{Env, EvalError};
 
@@ -18,6 +19,19 @@ pub enum Type {
     String,
     Bool,
     Float,
+    Null,
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Integer => write!(f, "integer"),
+            Self::String => write!(f, "string"),
+            Self::Bool => write!(f, "bool"),
+            Self::Float => write!(f, "float"),
+            Self::Null => write!(f, "null"),
+        }
+    }
 }
 
 /// A literal value that can be used in expressions.
@@ -106,6 +120,20 @@ impl VarName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum VarAccessError {
+    #[error("Variable access is empty")]
+    EmptyAccess,
+    #[error("Variable not found: {variable}")]
+    VariableNotFound { variable: String },
+    #[error("Type error: {message}")]
+    TypeError { message: String },
+    #[error("Index out of bounds: {message}")]
+    IndexOutOfBounds { message: String },
+    #[error("Conversion error: {message}")]
+    ConversionError { message: String },
+}
+
 /// A variable access, which is a series of variable names.
 ///
 /// Example: `foo.bar[0].baz` would be represented as a `VarAccess` with three `VarName`s:
@@ -137,66 +165,87 @@ impl VarAccess {
     }
 
     fn access_names(
-        names: &[VarName],
+        mut names: &[VarName],
         value: &serde_json::Value,
-    ) -> Result<Option<Literal>, String> {
+        ignore_first: bool,
+    ) -> Result<Option<Literal>, VarAccessError> {
         let mut current = value;
+
+        let var = names.last().ok_or(VarAccessError::EmptyAccess)?;
+
+        if ignore_first {
+            names = names.get(1..).ok_or(VarAccessError::EmptyAccess)?;
+        }
 
         // Reduce "current" by accessing each variable name in the access path
         for var in names {
             if let serde_json::Value::Object(o) = current {
                 current = o
                     .get(var.name())
-                    .ok_or_else(|| format!("Expected object at '{}'", var.name()))?;
+                    .ok_or_else(|| VarAccessError::VariableNotFound {
+                        variable: var.name().to_string(),
+                    })?;
 
                 if let Some(index) = var.index() {
-                    let arr = current.as_array().ok_or_else(|| {
-                        format!("Expected array at '{}', received {:?}", var.name(), current)
-                    })?;
+                    let arr = current
+                        .as_array()
+                        .ok_or_else(|| VarAccessError::TypeError {
+                            message: format!(
+                                "Expected array at '{}', received {:?}",
+                                var.name(),
+                                current
+                            ),
+                        })?;
 
-                    current = arr.get(index).ok_or_else(|| {
-                        format!(
-                            "Index out of bounds at '{}' (index: {index} length: {})",
-                            var.name(),
-                            arr.len()
-                        )
-                    })?;
+                    current = arr
+                        .get(index)
+                        .ok_or_else(|| VarAccessError::IndexOutOfBounds {
+                            message: format!(
+                                "Index out of bounds at '{}' (index: {index} length: {})",
+                                var.name(),
+                                arr.len()
+                            ),
+                        })?;
                 }
             }
         }
 
-        let var = names
-            .last()
-            .expect("Variable access must have at least one name");
-
         match current {
             serde_json::Value::Null => Ok(None),
-            serde_json::Value::Object(_) => {
-                Err(format!("Cannot use object in expression '{}'", var.name()))
-            }
+            serde_json::Value::Object(_) => Err(VarAccessError::TypeError {
+                message: format!("Cannot use object in expression '{}'", var.name()),
+            }),
             serde_json::Value::Array(_) if var.index().is_none() => {
-                Err(format!("Cannot use array in expression '{}'", var.name()))
+                Err(VarAccessError::TypeError {
+                    message: format!("Cannot use array in expression '{}'", var.name()),
+                })
             }
             serde_json::Value::Array(arr) => {
-                let index = var
-                    .index()
-                    .ok_or_else(|| format!("Expected array index for '{}'", var.name()))?;
-
-                let value = arr.get(index).ok_or_else(|| {
-                    format!(
-                        "Index out of bounds at '{}' (index: {index} length: {})",
-                        var.name(),
-                        arr.len()
-                    )
+                let index = var.index().ok_or_else(|| VarAccessError::ConversionError {
+                    message: format!("Expected array index for '{}'", var.name()),
                 })?;
 
-                Literal::try_from(value.clone())
-                    .map(Some)
-                    .map_err(|e| format!("Failed to convert value at '{}': {e}", var.name()))
+                let value = arr
+                    .get(index)
+                    .ok_or_else(|| VarAccessError::IndexOutOfBounds {
+                        message: format!(
+                            "Index out of bounds at '{}' (index: {index} length: {})",
+                            var.name(),
+                            arr.len()
+                        ),
+                    })?;
+
+                Literal::try_from(value.clone()).map(Some).map_err(|e| {
+                    VarAccessError::ConversionError {
+                        message: format!("Failed to convert value at '{}': {e}", var.name()),
+                    }
+                })
             }
-            v => Literal::try_from(v.clone())
-                .map(Some)
-                .map_err(|e| format!("Failed to convert value at '{}': {e}", var.name())),
+            v => Literal::try_from(v.clone()).map(Some).map_err(|e| {
+                VarAccessError::ConversionError {
+                    message: format!("Failed to convert value at '{}': {e}", var.name()),
+                }
+            }),
         }
     }
 
@@ -208,8 +257,8 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access(&self, value: &serde_json::Value) -> Result<Option<Literal>, String> {
-        Self::access_names(&self.names, value)
+    pub fn access(&self, value: &serde_json::Value) -> Result<Option<Literal>, VarAccessError> {
+        Self::access_names(&self.names, value, false)
     }
 
     /// Access the value denoted by this accessor from the given JSON value.
@@ -223,7 +272,7 @@ impl VarAccess {
     pub fn access_from_bindings(
         &self,
         bindings: &HashMap<Box<str>, serde_json::Value>,
-    ) -> Result<Option<Literal>, String> {
+    ) -> Result<Option<Literal>, VarAccessError> {
         if self.names.is_empty() {
             return Ok(None);
         }
@@ -231,9 +280,11 @@ impl VarAccess {
         let first_name = self.names[0].name();
         let value = bindings
             .get(first_name)
-            .ok_or_else(|| format!("Variable '{first_name}' not found in bindings"))?;
+            .ok_or_else(|| VarAccessError::VariableNotFound {
+                variable: first_name.to_string(),
+            })?;
 
-        Self::access_names(&self.names[1..], value)
+        Self::access_names(&self.names, value, true)
     }
 }
 
@@ -254,11 +305,15 @@ impl Display for VarAccess {
 }
 
 impl<'a> TryFrom<&'a str> for VarAccess {
-    type Error = nom::Err<nom::error::Error<&'a str>>;
+    type Error = nom::error::Error<&'a str>;
 
     fn try_from(s: &'a str) -> Result<Self, Self::Error> {
-        match parse_variable_name(s) {
-            Ok((_, var_access)) => Ok(var_access),
+        match parse_variable_name(s).finish() {
+            Ok(("", var_access)) => Ok(var_access),
+            Ok((remaining, _)) => Err(nom::error::Error::new(
+                remaining,
+                nom::error::ErrorKind::Eof,
+            )),
             Err(e) => Err(e),
         }
     }
@@ -269,7 +324,7 @@ pub enum Exp {
     Literal(Literal),
     Var(VarAccess),
     FnCall(FunctionItem),
-    Not(Box<Self>),
+    Neg(Box<Self>),
     Or(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
     Eq(Box<Self>, Box<Self>),
@@ -293,8 +348,17 @@ impl Exp {
     /// ## Errors
     ///
     /// - If the input string does not match the expected pattern, a parsing error will be returned.
-    pub fn parse(input: &str) -> IResult<&str, Self> {
-        parse_exp(input)
+    pub fn parse(input: &str) -> Result<Self, nom::error::Error<&str>> {
+        let (remainder, exp) = parse_exp(input).finish()?;
+
+        if !remainder.trim().is_empty() {
+            return Err(nom::error::Error::new(
+                remainder,
+                nom::error::ErrorKind::Eof,
+            ));
+        }
+
+        Ok(exp)
     }
 
     /// Evaluate the expression in the given environment and return the resulting literal value.
@@ -357,7 +421,7 @@ impl Exp {
     ///
     /// - If the variable access syntax is invalid
     #[inline]
-    pub fn varname(accessor: &str) -> Result<Self, nom::Err<nom::error::Error<&str>>> {
+    pub fn varname(accessor: &str) -> Result<Self, nom::error::Error<&str>> {
         VarAccess::try_from(accessor).map(Self::var)
     }
 
@@ -378,7 +442,7 @@ impl Exp {
     #[inline]
     #[expect(clippy::should_implement_trait)]
     pub fn neg(exp: Self) -> Self {
-        Self::Not(Box::new(exp))
+        Self::Neg(Box::new(exp))
     }
 
     #[inline]
@@ -423,13 +487,10 @@ impl Exp {
 }
 
 impl<'a> TryFrom<&'a str> for Exp {
-    type Error = nom::Err<nom::error::Error<&'a str>>;
+    type Error = nom::error::Error<&'a str>;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        match Self::parse(value) {
-            Ok((_, exp)) => Ok(exp),
-            Err(e) => Err(e),
-        }
+        Self::parse(value)
     }
 }
 
@@ -440,10 +501,10 @@ pub struct FunctionItem {
 }
 
 impl FunctionItem {
-    pub fn new(name: impl Into<String>, args: Vec<Exp>) -> Self {
+    pub fn new(name: impl Into<String>, args: impl Into<Vec<Exp>>) -> Self {
         Self {
             name: name.into(),
-            args,
+            args: args.into(),
         }
     }
 

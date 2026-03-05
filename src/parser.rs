@@ -514,6 +514,23 @@ mod tests {
     }
 
     #[test]
+    fn test_and_or_precedence() {
+        assert_eq!(
+            parse_exp("true || false && false"),
+            Ok((
+                "",
+                Exp::or(
+                    Exp::literal(Literal::Bool(true)),
+                    Exp::and(
+                        Exp::literal(Literal::Bool(false)),
+                        Exp::literal(Literal::Bool(false))
+                    )
+                )
+            ))
+        );
+    }
+
+    #[test]
     fn test_or() {
         assert_eq!(
             parse_exp("true || false"),
