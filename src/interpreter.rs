@@ -1,6 +1,9 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-use crate::functions::{FnCallError, VTABLE, VTable};
+use crate::{
+    functions::{FnCallError, VTABLE, VTable},
+    types::{FunctionItem, VarAccess},
+};
 
 use super::types::{Exp, Literal};
 
@@ -24,6 +27,14 @@ impl Env {
             vtable: VTABLE.clone(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Cmp {
+    Lt,
+    Gt,
+    Leq,
+    Geq,
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -173,14 +184,6 @@ fn eval_neq<'a>(
     out(Literal::Bool(!eq_value))
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Cmp {
-    Lt,
-    Gt,
-    Leq,
-    Geq,
-}
-
 fn eval_cmp<'a>(
     exp1: &'a Exp,
     exp2: &'a Exp,
@@ -211,30 +214,41 @@ fn eval_cmp<'a>(
     }
 }
 
+fn eval_varaccess<'a>(
+    var: &'a VarAccess,
+    env: &Env,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    var.access_from_bindings(&env.bindings)
+        .map_err(EvalError::VariableNotFound)
+        .map(|opt| opt.map(Cow::Owned::<Literal>))
+}
+
+fn eval_fncall<'a>(
+    function: &'a FunctionItem,
+    env: &Env,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let func = env
+        .vtable
+        .get(function.name())
+        .ok_or_else(|| EvalError::FunctionNotFound(function.name().to_string()))?;
+
+    let args: Vec<Option<Literal>> = function
+        .args()
+        .iter()
+        .map(|arg| eval(arg, env))
+        .map(|res| res.map(|opt| opt.map(Cow::into_owned)))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    func(&args)
+        .map_err(EvalError::FnCallError)
+        .map(|opt| opt.map(Cow::Owned))
+}
+
 pub(super) fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, EvalError> {
     match exp {
         Exp::Literal(literal) => Ok(Some(Cow::Borrowed(literal))),
-        Exp::Var(var) => Ok(var
-            .access_from_bindings(&env.bindings)
-            .map_err(EvalError::VariableNotFound)?
-            .map(Cow::Owned::<Literal>)),
-        Exp::FnCall(function) => {
-            let func = env
-                .vtable
-                .get(function.name())
-                .ok_or_else(|| EvalError::FunctionNotFound(function.name().to_string()))?;
-
-            let args: Vec<Option<Literal>> = function
-                .args()
-                .iter()
-                .map(|arg| eval(arg, env))
-                .map(|res| res.map(|opt| opt.map(Cow::into_owned)))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            func(&args)
-                .map_err(EvalError::FnCallError)
-                .map(|opt| opt.map(Cow::Owned))
-        }
+        Exp::Var(var) => eval_varaccess(var, env),
+        Exp::FnCall(function) => eval_fncall(function, env),
         Exp::Not(exp) => eval_not(exp, env),
         Exp::Or(exp1, exp2) => eval_or(exp1, exp2, env),
         Exp::And(exp1, exp2) => eval_and(exp1, exp2, env),
