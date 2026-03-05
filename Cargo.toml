@@ -29,6 +29,7 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 # When impl Trait can be used in type aliases, remove this
 future_not_send = "allow"
+option_if_let_else = "allow"
 
 # Enable incremental compilation for dev builds to improve re-compilation time.
 [profile.dev]

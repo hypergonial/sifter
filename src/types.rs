@@ -25,7 +25,7 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Integer => write!(f, "integer"),
+            Self::Integer => write!(f, "int"),
             Self::String => write!(f, "string"),
             Self::Bool => write!(f, "bool"),
             Self::Float => write!(f, "float"),
@@ -74,6 +74,47 @@ impl<'a> From<&'a Literal> for bool {
 impl From<Literal> for Type {
     fn from(lit: Literal) -> Self {
         lit.type_name()
+    }
+}
+
+impl<'a> TryFrom<&'a Literal> for i64 {
+    type Error = String;
+
+    fn try_from(value: &'a Literal) -> Result<Self, Self::Error> {
+        match value {
+            Literal::Int(i) => Ok(*i),
+            Literal::Float(f) => Ok(*f as Self),
+            Literal::String(s) => s
+                .parse()
+                .map_err(|e| format!("Failed to parse string as integer: {e}")),
+            Literal::Bool(b) => Ok(Self::from(*b)),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Literal> for f64 {
+    type Error = String;
+
+    fn try_from(value: &'a Literal) -> Result<Self, Self::Error> {
+        match value {
+            Literal::Float(f) => Ok(*f),
+            Literal::Int(i) => Ok(*i as Self),
+            Literal::String(s) => s
+                .parse()
+                .map_err(|e| format!("Failed to parse string as float: {e}")),
+            Literal::Bool(b) => Ok(Self::from(*b)),
+        }
+    }
+}
+
+impl<'a> From<&'a Literal> for Arc<str> {
+    fn from(value: &'a Literal) -> Self {
+        match value {
+            Literal::String(s) => s.clone(),
+            Literal::Int(i) => i.to_string().into(),
+            Literal::Float(f) => f.to_string().into(),
+            Literal::Bool(b) => b.to_string().into(),
+        }
     }
 }
 

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use thiserror::Error;
 
@@ -27,6 +30,10 @@ pub static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
         ("startsWith", starts_with),
         ("endsWith", ends_with),
         ("contains", contains),
+        ("bool", into_bool),
+        ("string", into_string),
+        ("int", into_int),
+        ("float", into_float),
     ]);
     it
 });
@@ -120,4 +127,86 @@ fn matches(args: FnArgs<'_>) -> FnResult {
         })?;
         Ok(Some(Literal::Bool(re.is_match(s))))
     })
+}
+
+fn into_bool(args: FnArgs<'_>) -> FnResult {
+    if args.len() != 1 {
+        return Err(FnCallError {
+            fn_name: "bool".to_string(),
+            reason: EvalError::ArgumentCount {
+                expected: 1,
+                got: args.len(),
+            }
+            .into(),
+        });
+    }
+
+    Ok(Some(Literal::Bool(
+        args[0].as_ref().is_some_and(bool::from),
+    )))
+}
+
+fn into_string(args: FnArgs<'_>) -> FnResult {
+    if args.len() != 1 {
+        return Err(FnCallError {
+            fn_name: "string".to_string(),
+            reason: EvalError::ArgumentCount {
+                expected: 1,
+                got: args.len(),
+            }
+            .into(),
+        });
+    }
+
+    let string: Arc<str> = args[0].as_ref().map_or_else(|| "null".into(), Into::into);
+
+    Ok(Some(Literal::String(string)))
+}
+
+fn numeric_convert<T>(
+    fn_name: &'static str,
+    args: FnArgs<'_>,
+    convert: impl Fn(&Literal) -> Option<T>,
+    wrap: impl Fn(T) -> Literal,
+) -> FnResult {
+    if args.len() != 1 {
+        return Err(FnCallError {
+            fn_name: fn_name.to_string(),
+            reason: EvalError::ArgumentCount {
+                expected: 1,
+                got: args.len(),
+            }
+            .into(),
+        });
+    }
+
+    match &args[0] {
+        Some(value) => convert(value)
+            .ok_or_else(|| FnCallError {
+                fn_name: fn_name.to_string(),
+                reason: EvalError::TypeError {
+                    message: format!(
+                        "Expected a value that can be converted to {fn_name}, got {:?}",
+                        args[0]
+                    ),
+                }
+                .into(),
+            })
+            .map(|v| Some(wrap(v))),
+        None => Err(FnCallError {
+            fn_name: fn_name.to_string(),
+            reason: EvalError::TypeError {
+                message: format!("Expected a value that can be converted to {fn_name}, got null"),
+            }
+            .into(),
+        }),
+    }
+}
+
+fn into_int(args: FnArgs<'_>) -> FnResult {
+    numeric_convert("int", args, |v| i64::try_from(v).ok(), Literal::Int)
+}
+
+fn into_float(args: FnArgs<'_>) -> FnResult {
+    numeric_convert("float", args, |v| f64::try_from(v).ok(), Literal::Float)
 }

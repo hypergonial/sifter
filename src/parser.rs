@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use nom::{
-    Parser,
+    IResult, Parser,
     branch::alt,
     bytes::complete::{escaped, is_not, tag, take_while},
     character::complete::{char, digit1, multispace0, one_of},
@@ -12,8 +12,6 @@ use nom::{
 };
 
 use super::types::{Exp, FunctionItem, Literal, VarAccess, VarName};
-
-use nom::IResult;
 
 static KEYWORDS: [&str; 2] = ["true", "false"];
 

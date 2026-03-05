@@ -381,8 +381,7 @@ mod tests {
             (
                 "x > y",
                 Err(EvalError::TypeError {
-                    message: "Cannot compare values of different types: integer and string"
-                        .to_string(),
+                    message: "Cannot compare values of different types: int and string".to_string(),
                 }),
             ),
             (
