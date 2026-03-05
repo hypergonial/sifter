@@ -1,10 +1,13 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fmt::{Display, Write},
     sync::Arc,
 };
 
 use nom::IResult;
+
+use crate::interpreter::{Env, EvalError};
 
 use super::parser::{parse_exp, parse_variable_name};
 
@@ -34,6 +37,22 @@ impl Literal {
             Self::Float(_) => Type::Float,
             Self::Bool(_) => Type::Bool,
             Self::String(_) => Type::String,
+        }
+    }
+}
+
+impl<'a> From<&'a Literal> for bool {
+    // Truthiness of a literal value:
+    // - Integers are false if they are 0, true otherwise
+    // - Floats are false if they are 0.0, true otherwise
+    // - Booleans are their own truthiness
+    // - Strings are false if they are empty, true otherwise
+    fn from(lit: &'a Literal) -> Self {
+        match lit {
+            Literal::Int(i) => *i != 0,
+            Literal::Float(f) => *f != 0.0,
+            Literal::Bool(b) => *b,
+            Literal::String(s) => !s.is_empty(),
         }
     }
 }
@@ -249,7 +268,7 @@ impl<'a> TryFrom<&'a str> for VarAccess {
 pub enum Exp {
     Literal(Literal),
     Var(VarAccess),
-    FnCall(Function),
+    FnCall(FunctionItem),
     Not(Box<Self>),
     Or(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
@@ -278,23 +297,81 @@ impl Exp {
         parse_exp(input)
     }
 
+    /// Evaluate the expression in the given environment and return the resulting literal value.
+    ///
+    /// ## Parameters
+    ///
+    /// - `env`: The environment to evaluate the expression in, which contains variable bindings and function definitions.
+    ///
+    /// ## Returns
+    ///
+    /// - `Ok(Some(Literal))` if the expression was successfully evaluated and resulted in a literal value.
+    /// - `Ok(None)` if the expression was successfully evaluated but resulted in a null value
+    ///
+    /// ## Errors
+    ///
+    /// - If there was an error during evaluation, such as a type error or undefined variable, an `EvalError` will be returned.
+    pub fn eval(&self, env: &Env) -> Result<Option<Cow<'_, Literal>>, EvalError> {
+        super::interpreter::eval(self, env)
+    }
+
+    /// Create a new `Exp` representing a literal value.
+    ///
+    /// ## Parameters
+    ///
+    /// - `lit`: The literal value to create an expression for.
+    ///
+    /// ## Returns
+    ///
+    /// - An `Exp` enum representing the literal value.
     #[inline]
-    pub fn literal(lit: Literal) -> Self {
+    pub const fn literal(lit: Literal) -> Self {
         Self::Literal(lit)
     }
 
+    /// Create a new `Exp` representing a variable access.
+    ///
+    /// ## Parameters
+    ///
+    /// - `accessor`: The variable access to create an expression for.
+    ///
+    /// ## Returns
+    ///
+    /// - An `Exp` enum representing the variable access.
     #[inline]
     pub const fn var(accessor: VarAccess) -> Self {
         Self::Var(accessor)
     }
 
+    /// Create a new `Exp` representing a function call.
+    ///
+    /// ## Parameters
+    ///
+    /// - `accessor`: The variable access syntax, e.g. "foo.bar[0].baz"
+    ///
+    /// ## Returns
+    ///
+    /// - An `Exp` enum representing the function call.
+    ///
+    /// ## Errors
+    ///
+    /// - If the variable access syntax is invalid
     #[inline]
-    pub fn varname(name: &str) -> Result<Self, nom::Err<nom::error::Error<&str>>> {
-        VarAccess::try_from(name).map(Self::var)
+    pub fn varname(accessor: &str) -> Result<Self, nom::Err<nom::error::Error<&str>>> {
+        VarAccess::try_from(accessor).map(Self::var)
     }
 
+    /// Create a new `Exp` representing a function call.
+    ///
+    /// ## Parameters
+    ///
+    /// - `func`: The function to call, which includes the function name and its arguments.
+    ///
+    /// ## Returns
+    ///
+    /// - An `Exp` enum representing the function call.
     #[inline]
-    pub const fn fn_call(func: Function) -> Self {
+    pub const fn fn_call(func: FunctionItem) -> Self {
         Self::FnCall(func)
     }
 
@@ -357,16 +434,16 @@ impl<'a> TryFrom<&'a str> for Exp {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Function {
+pub struct FunctionItem {
     name: String,
-    inputs: Vec<Exp>,
+    args: Vec<Exp>,
 }
 
-impl Function {
-    pub fn new(name: impl Into<String>, inputs: Vec<Exp>) -> Self {
+impl FunctionItem {
+    pub fn new(name: impl Into<String>, args: Vec<Exp>) -> Self {
         Self {
             name: name.into(),
-            inputs,
+            args,
         }
     }
 
@@ -374,8 +451,8 @@ impl Function {
         &self.name
     }
 
-    pub fn inputs(&self) -> &[Exp] {
-        &self.inputs
+    pub fn args(&self) -> &[Exp] {
+        &self.args
     }
 }
 

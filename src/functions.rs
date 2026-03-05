@@ -26,15 +26,15 @@ pub static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     it
 });
 
-fn string_unary<'a>(inputs: FnArgs<'a>, function: impl Fn(&'a str) -> FnResult) -> FnResult {
-    if inputs.len() != 1 {
+fn string_unary<'a>(args: FnArgs<'a>, function: impl Fn(&'a str) -> FnResult) -> FnResult {
+    if args.len() != 1 {
         return Err(FnCallError::ArgumentCount {
             expected: 1,
-            got: inputs.len(),
+            got: args.len(),
         });
     }
 
-    match &inputs[0] {
+    match &args[0] {
         Some(Literal::String(s)) => function(s),
         _ => Err(FnCallError::TypeError {
             message: "Expected a string".to_string(),
@@ -43,17 +43,17 @@ fn string_unary<'a>(inputs: FnArgs<'a>, function: impl Fn(&'a str) -> FnResult) 
 }
 
 fn string_binary<'a>(
-    inputs: FnArgs<'a>,
+    args: FnArgs<'a>,
     function: impl Fn(&'a str, &'a str) -> FnResult,
 ) -> FnResult {
-    if inputs.len() != 2 {
+    if args.len() != 2 {
         return Err(FnCallError::ArgumentCount {
             expected: 2,
-            got: inputs.len(),
+            got: args.len(),
         });
     }
 
-    match (&inputs[0], &inputs[1]) {
+    match (&args[0], &args[1]) {
         (Some(Literal::String(s)), Some(Literal::String(other))) => function(s, other),
         _ => Err(FnCallError::TypeError {
             message: "Expected two strings".to_string(),
@@ -61,30 +61,26 @@ fn string_binary<'a>(
     }
 }
 
-fn length<'a>(inputs: FnArgs<'a>) -> FnResult {
-    string_unary(inputs, |s| Ok(Some(Literal::Int(s.len() as i64))))
+fn length(args: FnArgs<'_>) -> FnResult {
+    string_unary(args, |s| Ok(Some(Literal::Int(s.len() as i64))))
 }
 
-fn starts_with<'a>(inputs: FnArgs<'a>) -> FnResult {
-    string_binary(inputs, |s, other| {
+fn starts_with(args: FnArgs<'_>) -> FnResult {
+    string_binary(args, |s, other| {
         Ok(Some(Literal::Bool(s.starts_with(other))))
     })
 }
 
-fn ends_with<'a>(inputs: FnArgs<'a>) -> FnResult {
-    string_binary(inputs, |s, other| {
-        Ok(Some(Literal::Bool(s.ends_with(other))))
-    })
+fn ends_with(args: FnArgs<'_>) -> FnResult {
+    string_binary(args, |s, other| Ok(Some(Literal::Bool(s.ends_with(other)))))
 }
 
-fn contains<'a>(inputs: FnArgs<'a>) -> FnResult {
-    string_binary(inputs, |s, other| {
-        Ok(Some(Literal::Bool(s.contains(other))))
-    })
+fn contains(args: FnArgs<'_>) -> FnResult {
+    string_binary(args, |s, other| Ok(Some(Literal::Bool(s.contains(other)))))
 }
 
-fn matches<'a>(inputs: FnArgs<'a>) -> FnResult {
-    string_binary(inputs, |s, pattern| {
+fn matches(args: FnArgs<'_>) -> FnResult {
+    string_binary(args, |s, pattern| {
         let re = regex::Regex::new(pattern).map_err(|e| FnCallError::RegexError {
             message: format!("Invalid regex pattern: {e}"),
         })?;

@@ -11,7 +11,7 @@ use nom::{
     sequence::{delimited, terminated},
 };
 
-use super::types::{Exp, Function, Literal, VarAccess, VarName};
+use super::types::{Exp, FunctionItem, Literal, VarAccess, VarName};
 
 use nom::IResult;
 
@@ -254,7 +254,7 @@ fn parse_non_assoc<'a, E: ParseError<&'a str> + 'a>(
 /// ## Errors
 ///
 /// - If the input string does not match the expected pattern (e.g. missing parentheses, missing quotes, etc.), a parsing error will be returned.
-fn parse_fn(input: &str) -> IResult<&str, Function> {
+fn parse_fn(input: &str) -> IResult<&str, FunctionItem> {
     let (input, (name, _, _, _, value, _, _)) = (
         map_res(take_while(|c: char| c.is_alphabetic()), |v: &str| {
             if v.is_empty() {
@@ -275,7 +275,7 @@ fn parse_fn(input: &str) -> IResult<&str, Function> {
     )
         .parse(input)?;
 
-    Ok((input, Function::new(name, value)))
+    Ok((input, FunctionItem::new(name, value)))
 }
 
 /// Parse a literal value (integer, float, boolean, or string)
@@ -607,7 +607,7 @@ mod tests {
             Ok((
                 "",
                 Exp::and(
-                    Exp::neg(Exp::fn_call(Function::new(
+                    Exp::neg(Exp::fn_call(FunctionItem::new(
                         "startsWith",
                         vec![Exp::literal(Literal::String("hello".into()))]
                     ))),
@@ -647,17 +647,17 @@ mod tests {
 
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![Exp::literal(Literal::String("hello".into()))]
         );
     }
 
     #[test]
-    fn test_fn_parser_noinputs() {
+    fn test_fn_parser_noargs() {
         let (_, parser_function) = parse_fn("isEmpty()").expect("Failed to parse matcher function");
 
         assert_eq!(parser_function.name(), "isEmpty");
-        assert_eq!(parser_function.inputs(), vec![]);
+        assert_eq!(parser_function.args(), vec![]);
     }
 
     #[test]
@@ -667,19 +667,19 @@ mod tests {
 
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![Exp::literal(Literal::String("hello".into()))]
         );
     }
 
     #[test]
-    fn test_fn_parser_multiple_inputs() {
+    fn test_fn_parser_multiple_args() {
         let (_, parser_function) =
             parse_fn("between(1, 10)").expect("Failed to parse matcher function");
 
         assert_eq!(parser_function.name(), "between");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![
                 Exp::literal(Literal::Int(1)),
                 Exp::literal(Literal::Int(10))
@@ -694,7 +694,7 @@ mod tests {
 
         assert_eq!(parser_function.name(), "between");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![
                 Exp::literal(Literal::Int(1)),
                 Exp::literal(Literal::Int(10))
@@ -703,15 +703,15 @@ mod tests {
     }
 
     #[test]
-    fn test_fn_parser_nested_inputs() {
+    fn test_fn_parser_nested_args() {
         let (_, parser_function) =
             parse_fn("between(length('hello'), 10)").expect("Failed to parse matcher function");
 
         assert_eq!(parser_function.name(), "between");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![
-                Exp::fn_call(Function::new(
+                Exp::fn_call(FunctionItem::new(
                     "length",
                     vec![Exp::literal(Literal::String("hello".into()))]
                 )),
@@ -727,7 +727,7 @@ mod tests {
 
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![Exp::literal(Literal::String("hello".into()))]
         );
     }
@@ -751,7 +751,7 @@ mod tests {
 
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
-            parser_function.inputs(),
+            parser_function.args(),
             vec![Exp::literal(Literal::String("".into()))]
         );
     }

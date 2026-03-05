@@ -1,7 +1,5 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-use serde_json::value;
-
 use crate::functions::{FnCallError, VTABLE, VTable};
 
 use super::types::{Exp, Literal};
@@ -28,6 +26,7 @@ impl Env {
     }
 }
 
+#[expect(clippy::needless_pass_by_value)]
 fn expect_type<T>(
     value: Option<Cow<'_, Literal>>,
     extractor: impl Fn(&Literal) -> Option<T>,
@@ -52,12 +51,9 @@ fn expect_type<T>(
 fn expect_bool(value: Option<Cow<'_, Literal>>) -> Result<bool, EvalError> {
     expect_type(
         value,
-        |l| {
-            if let Literal::Bool(b) = l {
-                Some(*b)
-            } else {
-                None
-            }
+        |l| match l {
+            Literal::Bool(b) => Some(*b),
+            _ => None,
         },
         "a boolean",
     )
@@ -66,12 +62,9 @@ fn expect_bool(value: Option<Cow<'_, Literal>>) -> Result<bool, EvalError> {
 fn expect_string(value: Option<Cow<'_, Literal>>) -> Result<Arc<str>, EvalError> {
     expect_type(
         value,
-        |l| {
-            if let Literal::String(s) = l {
-                Some(s.clone())
-            } else {
-                None
-            }
+        |l| match l {
+            Literal::String(s) => Some(s.clone()),
+            _ => None,
         },
         "a string",
     )
@@ -80,12 +73,9 @@ fn expect_string(value: Option<Cow<'_, Literal>>) -> Result<Arc<str>, EvalError>
 fn expect_int(value: Option<Cow<'_, Literal>>) -> Result<i64, EvalError> {
     expect_type(
         value,
-        |l| {
-            if let Literal::Int(i) = l {
-                Some(*i)
-            } else {
-                None
-            }
+        |l| match l {
+            Literal::Int(i) => Some(*i),
+            _ => None,
         },
         "an integer",
     )
@@ -94,12 +84,9 @@ fn expect_int(value: Option<Cow<'_, Literal>>) -> Result<i64, EvalError> {
 fn expect_float(value: Option<Cow<'_, Literal>>) -> Result<f64, EvalError> {
     expect_type(
         value,
-        |l| {
-            if let Literal::Float(f) = l {
-                Some(*f)
-            } else {
-                None
-            }
+        |l| match l {
+            Literal::Float(f) => Some(*f),
+            _ => None,
         },
         "a float",
     )
@@ -117,11 +104,114 @@ fn expect_null(value: Option<Cow<'_, Literal>>) -> Result<(), EvalError> {
 }
 
 #[inline]
+#[expect(clippy::unnecessary_wraps)]
 const fn out(literal: Literal) -> Result<Option<Cow<'static, Literal>>, EvalError> {
     Ok(Some(Cow::Owned(literal)))
 }
 
-pub fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+fn eval_not<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let value = eval(exp, env)?.as_deref().is_some_and(bool::from);
+    out(Literal::Bool(!value))
+}
+
+fn eval_and<'a>(
+    exp1: &'a Exp,
+    exp2: &'a Exp,
+    env: &Env,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let value1 = eval(exp1, env)?;
+    if value1.as_deref().is_some_and(bool::from) {
+        let value2 = eval(exp2, env)?;
+        Ok(value2)
+    } else {
+        out(Literal::Bool(false))
+    }
+}
+
+fn eval_or<'a>(
+    exp1: &'a Exp,
+    exp2: &'a Exp,
+    env: &Env,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let value1 = eval(exp1, env)?;
+    if value1.as_deref().is_some_and(bool::from) {
+        Ok(value1)
+    } else {
+        let value2 = eval(exp2, env)?;
+        Ok(value2)
+    }
+}
+
+fn eval_eq<'a>(
+    exp1: &'a Exp,
+    exp2: &'a Exp,
+    env: &Env,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let value1 = eval(exp1, env)?;
+    let value2 = eval(exp2, env)?;
+
+    match (value1.as_deref(), value2.as_deref()) {
+        (Some(Literal::Int(i1)), Some(Literal::Int(i2))) => out(Literal::Bool(i1 == i2)),
+        (Some(Literal::String(s1)), Some(Literal::String(s2))) => out(Literal::Bool(s1 == s2)),
+        (Some(Literal::Bool(b1)), Some(Literal::Bool(b2))) => out(Literal::Bool(b1 == b2)),
+        (None, _) | (_, None) => out(Literal::Bool(false)),
+        _ => Err(EvalError::TypeError(format!(
+            "Cannot compare values of different types: {:?} and {:?}",
+            value1.as_deref(),
+            value2.as_deref()
+        ))),
+    }
+}
+
+fn eval_neq<'a>(
+    exp1: &'a Exp,
+    exp2: &'a Exp,
+    env: &Env,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let res = eval_eq(exp1, exp2, env)?;
+    let eq_value = expect_bool(res)?;
+    out(Literal::Bool(!eq_value))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Cmp {
+    Lt,
+    Gt,
+    Leq,
+    Geq,
+}
+
+fn eval_cmp<'a>(
+    exp1: &'a Exp,
+    exp2: &'a Exp,
+    env: &Env,
+    cmp: Cmp,
+) -> Result<Option<Cow<'a, Literal>>, EvalError> {
+    let value1 = eval(exp1, env)?;
+    let value2 = eval(exp2, env)?;
+
+    match (value1.as_deref(), value2.as_deref()) {
+        (Some(Literal::Int(i1)), Some(Literal::Int(i2))) => out(Literal::Bool(match cmp {
+            Cmp::Lt => i1 < i2,
+            Cmp::Gt => i1 > i2,
+            Cmp::Leq => i1 <= i2,
+            Cmp::Geq => i1 >= i2,
+        })),
+        (Some(Literal::Float(f1)), Some(Literal::Float(f2))) => out(Literal::Bool(match cmp {
+            Cmp::Lt => f1 < f2,
+            Cmp::Gt => f1 > f2,
+            Cmp::Leq => f1 <= f2,
+            Cmp::Geq => f1 >= f2,
+        })),
+        _ => Err(EvalError::TypeError(format!(
+            "Cannot compare values of different types: {:?} and {:?}",
+            value1.as_deref(),
+            value2.as_deref()
+        ))),
+    }
+}
+
+pub(super) fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, EvalError> {
     match exp {
         Exp::Literal(literal) => Ok(Some(Cow::Borrowed(literal))),
         Exp::Var(var) => Ok(var
@@ -135,7 +225,7 @@ pub fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, Eva
                 .ok_or_else(|| EvalError::FunctionNotFound(function.name().to_string()))?;
 
             let args: Vec<Option<Literal>> = function
-                .inputs()
+                .args()
                 .iter()
                 .map(|arg| eval(arg, env))
                 .map(|res| res.map(|opt| opt.map(Cow::into_owned)))
@@ -145,50 +235,14 @@ pub fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Option<Cow<'a, Literal>>, Eva
                 .map_err(EvalError::FnCallError)
                 .map(|opt| opt.map(Cow::Owned))
         }
-        Exp::Not(exp) => {
-            let value = expect_bool(eval(exp, env)?)?;
-            out(Literal::Bool(!value))
-        }
-        Exp::Or(exp1, exp2) => {
-            let value1 = expect_bool(eval(exp1, env)?)?;
-            if value1 {
-                out(Literal::Bool(true))
-            } else {
-                let value2 = expect_bool(eval(exp2, env)?)?;
-                out(Literal::Bool(value2))
-            }
-        }
-        Exp::And(exp1, exp2) => {
-            let value1 = expect_bool(eval(exp1, env)?)?;
-            if value1 {
-                let value2 = expect_bool(eval(exp2, env)?)?;
-                out(Literal::Bool(value2))
-            } else {
-                out(Literal::Bool(false))
-            }
-        }
-        Exp::Eq(exp1, exp2) => {
-            let value1 = eval(exp1, env)?;
-            let value2 = eval(exp2, env)?;
-
-            match (value1.as_deref(), value2.as_deref()) {
-                (Some(Literal::Int(i1)), Some(Literal::Int(i2))) => out(Literal::Bool(i1 == i2)),
-                (Some(Literal::String(s1)), Some(Literal::String(s2))) => {
-                    out(Literal::Bool(s1 == s2))
-                }
-                (Some(Literal::Bool(b1)), Some(Literal::Bool(b2))) => out(Literal::Bool(b1 == b2)),
-                (None, _) | (_, None) => out(Literal::Bool(false)),
-                _ => Err(EvalError::TypeError(format!(
-                    "Cannot compare values of different types: {:?} and {:?}",
-                    value1.as_deref(),
-                    value2.as_deref()
-                ))),
-            }
-        }
-        Exp::Neq(exp, exp1) => todo!(),
-        Exp::Gt(exp, exp1) => todo!(),
-        Exp::Lt(exp, exp1) => todo!(),
-        Exp::Geq(exp, exp1) => todo!(),
-        Exp::Leq(exp, exp1) => todo!(),
+        Exp::Not(exp) => eval_not(exp, env),
+        Exp::Or(exp1, exp2) => eval_or(exp1, exp2, env),
+        Exp::And(exp1, exp2) => eval_and(exp1, exp2, env),
+        Exp::Eq(exp1, exp2) => eval_eq(exp1, exp2, env),
+        Exp::Neq(exp, exp1) => eval_neq(exp, exp1, env),
+        Exp::Gt(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Gt),
+        Exp::Lt(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Lt),
+        Exp::Geq(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Geq),
+        Exp::Leq(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Leq),
     }
 }
