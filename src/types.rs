@@ -6,6 +6,7 @@ use std::{
 };
 
 use nom::Finish;
+use serde::Deserialize;
 use thiserror::Error;
 
 use crate::interpreter::{Env, EvalError};
@@ -360,6 +361,16 @@ impl<'a> TryFrom<&'a str> for VarAccess {
     }
 }
 
+impl<'a> Deserialize<'a> for VarAccess {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::try_from(s.as_str()).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Exp {
     Literal(Literal),
@@ -532,6 +543,16 @@ impl<'a> TryFrom<&'a str> for Exp {
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         Self::parse(value)
+    }
+}
+
+impl<'a> Deserialize<'a> for Exp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::try_from(s.as_str()).map_err(serde::de::Error::custom)
     }
 }
 
