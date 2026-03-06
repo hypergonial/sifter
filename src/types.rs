@@ -139,7 +139,7 @@ impl TryFrom<serde_json::Value> for Literal {
 }
 
 /// A variable name, with an optional index for array access.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VarName {
     name: Box<str>,
     index: Option<usize>,
@@ -182,7 +182,7 @@ pub enum VarAccessError {
 /// - `foo` with no index
 /// - `bar` with index 0
 /// - `baz` with no index
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VarAccess {
     names: Vec<VarName>,
 }
