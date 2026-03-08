@@ -1,4 +1,4 @@
-use std::{fs::File, path::PathBuf, str::FromStr};
+use std::{fs::File, io::IsTerminal, path::PathBuf, str::FromStr};
 
 use clap::{ArgAction, Parser};
 use sifter::Exp;
@@ -11,7 +11,10 @@ struct Cli {
     file: Option<VarValue>,
 
     #[arg(short, long, value_name = "VAR", num_args = 0.., action = ArgAction::Append)]
-    vars: Vec<Var>,
+    var: Vec<Var>,
+
+    #[arg(long, action = ArgAction::SetTrue)]
+    debug: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -41,8 +44,8 @@ impl FromStr for Var {
 
 #[derive(Debug, Clone)]
 enum VarValue {
-    Path(PathBuf),
     Json(serde_json::Value),
+    Path(PathBuf),
 }
 
 impl FromStr for VarValue {
@@ -82,7 +85,7 @@ fn vars_into_bindmap(vars: Vec<Var>) -> impl Iterator<Item = (Box<str>, serde_js
 
 fn main() {
     let args = Cli::parse();
-    let exp = Exp::try_from(args.exp.as_str()).unwrap_or_else(|e| {
+    let exp = Exp::new(args.exp.as_str()).unwrap_or_else(|e| {
         eprintln!("Error parsing expression: {e}");
         std::process::exit(1);
     });
@@ -92,19 +95,26 @@ fn main() {
             eprintln!("Error loading variable from file: {e}");
             std::process::exit(1);
         })),
-        None if args.vars.is_empty() => Some(
-            serde_json::from_reader(std::io::stdin())
-                .map_err(|e| e.to_string())
-                .unwrap_or_else(|e| {
-                    eprintln!("Error reading JSON from stdin: {e}");
-                    std::process::exit(1);
-                }),
-        ),
-        None => None,
+        None => {
+            if std::io::stdin().is_terminal() {
+                None
+            } else {
+                serde_json::from_reader(std::io::stdin())
+                    .map_err(|e| {
+                        if args.var.is_empty() {
+                            eprintln!("Error reading JSON from stdin: {e}");
+                            std::process::exit(1);
+                        } else {
+                            e
+                        }
+                    })
+                    .ok()
+            }
+        }
     };
     let mut env = sifter::Env::new();
 
-    env.bind_multiple(vars_into_bindmap(args.vars));
+    env.bind_multiple(vars_into_bindmap(args.var));
     if let Some(input) = input.as_ref() {
         env.bind_ref("value", input)
             .bind_ref("input", input)
@@ -112,6 +122,16 @@ fn main() {
     }
     let env = env.build();
 
-    println!("Expression: {exp:?}");
-    println!("Variables: {env:?}");
+    if args.debug {
+        eprintln!("AST {exp:#?}");
+        eprintln!("--------------");
+        eprintln!("{env:#?}");
+        eprintln!("--------------");
+    }
+
+    let result = exp.eval(&env).unwrap_or_else(|e| {
+        eprintln!("Error evaluating expression: {e}");
+        std::process::exit(1);
+    });
+    println!("{result}");
 }

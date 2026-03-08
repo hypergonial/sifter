@@ -1,18 +1,8 @@
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
-use thiserror::Error;
-
-use crate::interpreter::EvalError;
+use crate::{EvalError, FnCallError};
 
 use super::types::Literal;
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("Error calling function '{fn_name}': {reason}")]
-pub struct FnCallError {
-    pub fn_name: String,
-    #[source]
-    pub reason: Box<EvalError>,
-}
 
 pub type FnArgs<'a> = &'a [Literal<'a>];
 pub type FnResult<'a> = Result<Literal<'a>, FnCallError>;
@@ -20,7 +10,7 @@ pub type FnCallback = for<'a> fn(FnArgs<'a>) -> FnResult<'a>;
 
 pub type VTable = HashMap<&'static str, FnCallback>;
 
-pub static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
+pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     let it: VTable = HashMap::from([
         ("matches", matches as FnCallback),
         ("length", length),

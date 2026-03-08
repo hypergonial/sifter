@@ -12,5 +12,9 @@ workspace = true
 
 [dependencies]
 sifter = { path = "../sifter" }
-clap = { version = "4.5.60", features = ["derive"] }
-serde_json = "1.0.149"
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1.0"
+
+[[bin]]
+name = "sifter"
+path = "src/main.rs"

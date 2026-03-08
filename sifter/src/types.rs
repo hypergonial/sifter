@@ -1,37 +1,30 @@
 use std::{
     borrow::Cow,
+    collections::HashMap,
     fmt::{Display, Write},
 };
 
 use nom::Finish;
 use serde::Deserialize;
-use thiserror::Error;
 
-use crate::interpreter::{Env, EvalError};
+use crate::{VTable, VarAccessError, errors::EvalError, functions::DEFAULT_VTABLE};
 
 use super::parser::{parse_exp, parse_variable_name};
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum VarAccessError {
-    #[error("Variable access is empty")]
-    EmptyAccess,
-    #[error("Variable not found: {variable}")]
-    VariableNotFound { variable: String },
-    #[error("Type error: {message}")]
-    TypeError { message: String },
-    #[error("Index out of bounds: {message}")]
-    IndexOutOfBounds { message: String },
-    #[error("Conversion error: {message}")]
-    ConversionError { message: String },
-}
 
 /// A type of a literal value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
+    /// An integer value (base 10, signed 64-bit integer).
     Integer,
+    /// A UTF-8 string value.
     String,
+    /// A boolean value (`true` or `false`).
     Bool,
+    /// An IEEE-754 floating-point value (64-bit).
     Float,
+    /// A null value, representing the absence of a value.
+    /// This type has no associated data and is used to represent null literals and null values in JSON.
+    /// It is distinct from other types and is considered falsy in boolean contexts.
     NullType,
 }
 
@@ -50,18 +43,18 @@ impl Display for Type {
 /// A literal value that can be used in expressions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal<'a> {
+    /// An integer value (base 10, signed 64-bit integer).
     Int(i64),
+    /// An IEEE-754 floating-point value (64-bit).
     Float(f64),
+    /// A boolean value (`true` or `false`).
     Bool(bool),
+    /// A UTF-8 string value or reference.
     String(Cow<'a, str>),
+    /// A null value, representing the absence of a value.
+    /// This type has no associated data and is used to represent null literals and null values in JSON.
+    /// It is distinct from other types and is considered falsy in boolean contexts.
     Null,
-}
-
-fn cow_into_static<T: ?Sized + ToOwned>(cow: Cow<'_, T>) -> Cow<'static, T> {
-    match cow {
-        Cow::Borrowed(s) => Cow::Owned(s.to_owned()),
-        Cow::Owned(s) => Cow::Owned(s),
-    }
 }
 
 impl Literal<'_> {
@@ -70,7 +63,10 @@ impl Literal<'_> {
             Literal::Int(i) => Literal::Int(i),
             Literal::Float(f) => Literal::Float(f),
             Literal::Bool(b) => Literal::Bool(b),
-            Literal::String(s) => Literal::String(cow_into_static(s)),
+            Literal::String(s) => Literal::String(match s {
+                Cow::Borrowed(b) => Cow::Owned(b.to_owned()),
+                Cow::Owned(o) => Cow::Owned(o),
+            }),
             Literal::Null => Literal::Null,
         }
     }
@@ -242,12 +238,13 @@ pub struct VarAccess {
 }
 
 impl VarAccess {
-    /// Create a new `VarAccess` from a vector of `VarName`s.
+    /// Create a new [`VarAccess`] from a vector of [`VarName`]s.
     ///
     /// # Panics
     ///
     /// This function will panic if the `names` vector is empty, as a variable access must have at least one name.
-    pub const fn new(names: Vec<VarName>) -> Self {
+    pub fn new(names: impl Into<Vec<VarName>>) -> Self {
+        let names = names.into();
         assert!(
             !names.is_empty(),
             "Variable access must have at least one name"
@@ -256,6 +253,7 @@ impl VarAccess {
         Self { names }
     }
 
+    /// Get the sequence variable names in this access.
     pub fn names(&self) -> &[VarName] {
         &self.names
     }
@@ -429,6 +427,8 @@ impl<'a> Deserialize<'a> for VarAccess {
     }
 }
 
+/// Represents an Abstract Syntax Tree (AST) for sifter expressions,
+/// which can be evaluated in a given environment to produce a literal value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Exp<'a> {
     Literal(Literal<'a>),
@@ -446,7 +446,7 @@ pub enum Exp<'a> {
 }
 
 impl<'a> Exp<'a> {
-    /// Create a new `Exp` from a string representation of an expression.
+    /// Create a new [`Exp`] from a string representation of an expression.
     ///
     /// # Parameters
     ///
@@ -454,13 +454,17 @@ impl<'a> Exp<'a> {
     ///
     /// # Returns
     ///
-    /// - `Ok(Exp)` if the expression was successfully parsed from the string.
+    /// - <code>Ok([`Exp`])</code> if the expression was successfully parsed from the string.
     ///
     /// # Errors
     ///
     /// - If there was an error parsing the expression from the string,
     ///   such as a syntax error, an `Err` will be returned containing the parsing error details.
-    pub fn new(&self, string: impl Into<&'a str>) -> Result<Self, nom::error::Error<String>> {
+    ///
+    ///   Note that semantic errors (e.g. undefined variables, type errors) are not handled by this
+    ///   function and will not result in an error being returned here. Those errors will be encountered
+    ///   during evaluation of the expression, and will be returned as [`EvalError`]s from the [`Exp::eval`] method.
+    pub fn new(string: impl Into<&'a str>) -> Result<Self, nom::error::Error<String>> {
         string.into().try_into()
     }
 
@@ -468,15 +472,15 @@ impl<'a> Exp<'a> {
     ///
     /// ## Parameters
     ///
-    /// - `env`: The environment to evaluate the expression in, which contains variable bindings and function definitions.
+    /// - `env`: The [`Env`] to evaluate the expression in, which contains variable bindings and function definitions.
     ///
     /// ## Returns
     ///
-    /// - Ok(Literal) if the expression was successfully evaluated, where the `Literal` is the resulting value of the expression.
+    /// - <code>Ok([Cow]<'_, [Literal]>)</code> if the expression was successfully evaluated, where the `Literal` is the resulting value of the expression.
     ///
     /// ## Errors
     ///
-    /// - If there was an error during evaluation, such as a type error or undefined variable, an `EvalError` will be returned.
+    /// - If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
     pub fn eval<'b, 'c>(&'a self, env: &'b Env<'b>) -> Result<Cow<'c, Literal<'c>>, EvalError>
     where
         'a: 'c,
@@ -485,7 +489,7 @@ impl<'a> Exp<'a> {
         super::interpreter::eval(self, env)
     }
 
-    /// Create a new `Exp` representing a literal value.
+    /// Create a new [`Exp`] representing a literal value.
     ///
     /// ## Parameters
     ///
@@ -493,13 +497,13 @@ impl<'a> Exp<'a> {
     ///
     /// ## Returns
     ///
-    /// - An `Exp` enum representing the literal value.
+    /// - An [`Exp`] enum representing the literal value.
     #[inline]
     pub const fn literal(lit: Literal<'a>) -> Self {
         Self::Literal(lit)
     }
 
-    /// Create a new `Exp` representing a variable access.
+    /// Create a new [`Exp`] representing a variable access.
     ///
     /// ## Parameters
     ///
@@ -507,13 +511,13 @@ impl<'a> Exp<'a> {
     ///
     /// ## Returns
     ///
-    /// - An `Exp` enum representing the variable access.
+    /// - An [`Exp`] enum representing the variable access.
     #[inline]
     pub const fn var(accessor: VarAccess) -> Self {
         Self::Var(accessor)
     }
 
-    /// Create a new `Exp` representing a function call.
+    /// Create a new [`Exp`] representing a function call.
     ///
     /// ## Parameters
     ///
@@ -521,7 +525,7 @@ impl<'a> Exp<'a> {
     ///
     /// ## Returns
     ///
-    /// - An `Exp` enum representing the function call.
+    /// - An [`Exp`] enum representing the function call.
     ///
     /// ## Errors
     ///
@@ -531,7 +535,7 @@ impl<'a> Exp<'a> {
         VarAccess::try_from(accessor).map(Self::var)
     }
 
-    /// Create a new `Exp` representing a function call.
+    /// Create a new [`Exp`] representing a function call.
     ///
     /// ## Parameters
     ///
@@ -539,53 +543,135 @@ impl<'a> Exp<'a> {
     ///
     /// ## Returns
     ///
-    /// - An `Exp` enum representing the function call.
+    /// - An [`Exp`] enum representing the function call.
     #[inline]
     pub const fn fn_call(func: FunctionItem<'a>) -> Self {
         Self::FnCall(func)
     }
 
+    /// Create a new [`Exp`] representing a negation of another expression.
+    ///
+    /// ## Parameters
+    ///
+    /// - `exp`: The expression to negate.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the negation of the given expression.
     #[inline]
     #[expect(clippy::should_implement_trait)]
     pub fn neg(exp: Self) -> Self {
         Self::Neg(Box::new(exp))
     }
 
+    /// Create a new [`Exp`] representing a logical OR of two expressions.
+    ///
+    /// ## Parameters
+    ///
+    /// - `lhs`: The left-hand side expression of the OR operation.
+    /// - `rhs`: The right-hand side expression of the OR operation.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the logical OR of the two given expressions.
     #[inline]
     pub fn or(lhs: Self, rhs: Self) -> Self {
         Self::Or(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing a logical AND of two expressions.
+    ///
+    /// ## Parameters
+    ///
+    /// - `lhs`: The left-hand side expression of the AND operation.
+    /// - `rhs`: The right-hand side expression of the AND operation.
+    ///
+    /// ## Returns
+    /// - An [`Exp`] enum representing the logical AND of the two given expressions.
     #[inline]
     pub fn and(lhs: Self, rhs: Self) -> Self {
         Self::And(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing an equality comparison of two expressions.
+    ///
+    /// ## Parameters
+    ///
+    /// - `lhs`: The left-hand side expression of the equality comparison.
+    /// - `rhs`: The right-hand side expression of the equality comparison.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the equality comparison of the two given expressions.
     #[inline]
     pub fn eq(lhs: Self, rhs: Self) -> Self {
         Self::Eq(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing an inequality comparison of two expressions.
+    ///
+    /// ## Parameters
+    ///
+    /// - `lhs`: The left-hand side expression of the inequality comparison.
+    /// - `rhs`: The right-hand side expression of the inequality comparison.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the inequality comparison of the two given expressions.
     #[inline]
     pub fn neq(lhs: Self, rhs: Self) -> Self {
         Self::Neq(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing a greater-than comparison of two expressions.
+    ///
+    /// ## Parameters
+    ///
+    /// - `lhs`: The left-hand side expression of the greater-than comparison.
+    /// - `rhs`: The right-hand side expression of the greater-than comparison.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the greater-than comparison of the two given expressions.
     #[inline]
     pub fn gt(lhs: Self, rhs: Self) -> Self {
         Self::Gt(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing a less-than comparison of two expressions.
+    ///
+    /// ## Parameters
+    /// - `lhs`: The left-hand side expression of the less-than comparison.
+    /// - `rhs`: The right-hand side expression of the less-than comparison.
+    ///
+    /// ## Returns
+    /// - An [`Exp`] enum representing the less-than comparison of the two given expressions.
     #[inline]
     pub fn lt(lhs: Self, rhs: Self) -> Self {
         Self::Lt(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing a greater-than-or-equal-to comparison of two expressions.
+    ///
+    /// ## Parameters
+    /// - `lhs`: The left-hand side expression of the greater-than-or-equal-to comparison.
+    /// - `rhs`: The right-hand side expression of the greater-than-or-equal-to comparison.
+    ///
+    /// ## Returns
+    /// - An [`Exp`] enum representing the greater-than-or-equal-to comparison of the two given expressions.
     #[inline]
     pub fn geq(lhs: Self, rhs: Self) -> Self {
         Self::Geq(Box::new(lhs), Box::new(rhs))
     }
 
+    /// Create a new [`Exp`] representing a less-than-or-equal-to comparison of two expressions.
+    ///
+    /// ## Parameters
+    /// - `lhs`: The left-hand side expression of the less-than-or-equal-to comparison.
+    /// - `rhs`: The right-hand side expression of the less-than-or-equal-to comparison.
+    ///
+    /// ## Returns
+    /// - An [`Exp`] enum representing the less-than-or-equal-to comparison of the two given expressions.
     #[inline]
     pub fn leq(lhs: Self, rhs: Self) -> Self {
         Self::Leq(Box::new(lhs), Box::new(rhs))
@@ -619,6 +705,7 @@ impl<'a> Deserialize<'a> for Exp<'a> {
     }
 }
 
+/// Represents a function item in the AST, which consists of a function name and a list of argument expressions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionItem<'a> {
     name: String,
@@ -626,6 +713,15 @@ pub struct FunctionItem<'a> {
 }
 
 impl<'a> FunctionItem<'a> {
+    /// Create a new [`FunctionItem`] with the given function name and argument expressions.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the function being called.
+    /// - `args`: A vector of `Exp` representing the arguments passed to the function.
+    ///
+    /// # Returns
+    ///
+    /// - A new `FunctionItem` instance containing the provided function name and arguments.
     pub fn new(name: impl Into<String>, args: impl Into<Vec<Exp<'a>>>) -> Self {
         Self {
             name: name.into(),
@@ -633,12 +729,265 @@ impl<'a> FunctionItem<'a> {
         }
     }
 
+    /// The name of the function.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The argument expressions passed to the function.
     pub fn args(&self) -> &[Exp<'_>] {
         &self.args
+    }
+}
+
+/// The evaluation environment for a sifter expression, containing variable bindings and a function vtable.
+///
+/// To construct an `Env`, use `Env::new()` to create an [`EnvBuilder`], which provides a fluent interface
+/// for adding variable bindings and configuring the vtable. Once all bindings and configuration are set,
+/// call `.build()` on the [`EnvBuilder`] to create the final [`Env`] instance.
+#[derive(Debug, Clone)]
+pub struct Env<'var> {
+    bindings: HashMap<Box<str>, Cow<'var, serde_json::Value>>,
+    vtable: VTable,
+}
+
+impl<'var> Env<'var> {
+    /// Create a new [`EnvBuilder`] for constructing an [`Env`].
+    ///
+    /// # Example
+    /// ```rust
+    /// use sifter::Env;
+    /// let env = Env::new()
+    ///     .bind("x", serde_json::json!(42))
+    ///     .bind("y", serde_json::json!("hello"))
+    ///     .build();
+    ///
+    /// assert_eq!(env.bindings().get("x").unwrap().as_ref(), &serde_json::json!(42));
+    /// assert_eq!(env.bindings().get("y").unwrap().as_ref(), &serde_json::json!("hello"));
+    /// ```
+    #[expect(clippy::new_ret_no_self)]
+    pub fn new() -> EnvBuilder<'var> {
+        EnvBuilder::new()
+    }
+
+    /// Get a reference to the variable bindings in this environment.
+    ///
+    /// # Returns
+    ///
+    /// - A reference to the variable bindings, which is a `HashMap` mapping variable names
+    ///   to their corresponding JSON values.
+    #[inline]
+    pub const fn bindings(&self) -> &HashMap<Box<str>, Cow<'var, serde_json::Value>> {
+        &self.bindings
+    }
+
+    /// Get a reference to the active vtable.
+    ///
+    /// # Returns
+    ///
+    /// - A reference to the `VTable` containing the function definitions available in this environment.
+    #[inline]
+    pub(super) const fn vtable(&self) -> &VTable {
+        &self.vtable
+    }
+}
+
+/// A builder to construct an [`Env`].
+///
+/// # Example
+/// ```rust
+/// use sifter::Env;
+/// let env = Env::new()
+///     .bind("x", serde_json::json!(42))
+///     .bind("y", serde_json::json!("hello"))
+///     .build();
+///
+/// assert_eq!(env.bindings().get("x").unwrap().as_ref(), &serde_json::json!(42));
+/// assert_eq!(env.bindings().get("y").unwrap().as_ref(), &serde_json::json!("hello"));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct EnvBuilder<'var> {
+    bindings: HashMap<Box<str>, Cow<'var, serde_json::Value>>,
+    vtable: Option<VTable>,
+}
+
+impl<'var> EnvBuilder<'var> {
+    fn new() -> Self {
+        Self {
+            bindings: HashMap::new(),
+            vtable: None,
+        }
+    }
+
+    /// Returns true if the given variable name is bound in this environment, false otherwise.
+    pub fn is_bound(&self, name: &str) -> bool {
+        self.bindings.contains_key(name)
+    }
+
+    /// Get a reference to the value bound to the given variable name, if it exists.
+    ///
+    /// # Parameters
+    /// - `name`: The name of the variable to look up.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&Cow<'var, serde_json::Value>)` if the variable is bound in this environment,
+    ///   where the `Cow` contains a reference to the value if it was bound using `bind_ref`,
+    ///   or an owned value if it was bound using `bind`.
+    /// - `None` if the variable is not bound in this environment.
+    pub fn get_binding(&self, name: &str) -> Option<&Cow<'var, serde_json::Value>> {
+        self.bindings.get(name)
+    }
+
+    /// Bind a variable name to a JSON value in this environment.
+    /// If you want to bind a reference instead of an owned value, see [`EnvBuilder::bind_ref`].
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: The name of the variable to bind.
+    /// - `value`: The JSON value to bind to the variable name.
+    ///
+    /// # Returns
+    ///
+    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn bind(&mut self, name: impl Into<Box<str>>, value: serde_json::Value) -> &mut Self {
+        self.bindings.insert(name.into(), Cow::Owned(value));
+        self
+    }
+
+    /// Bind multiple variable names to JSON values in this environment.
+    /// If you want to bind references instead of owned values, see [`EnvBuilder::bind_ref_multiple`].
+    ///
+    /// # Parameters
+    ///
+    /// - `vars`: An iterable of `(name, value)` pairs, where `name` is the variable name to bind
+    ///   and `value` is the JSON value to bind to that name.
+    ///
+    /// # Returns
+    ///
+    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn bind_multiple(
+        &mut self,
+        vars: impl IntoIterator<Item = (impl Into<Box<str>>, serde_json::Value)>,
+    ) -> &mut Self {
+        for (name, value) in vars {
+            self.bindings.insert(name.into(), Cow::Owned(value));
+        }
+        self
+    }
+
+    /// Bind a reference to a JSON value in this environment, which allows the value
+    /// to be shared across multiple environments without cloning. Additionally, when possible,
+    /// the return value of an evaluation can be a reference to one of the bindings or literals,
+    /// which can be more efficient than returning an owned value.
+    /// If you want to bind an owned value instead of a reference, see [`EnvBuilder::bind`].
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: The name of the variable to bind.
+    /// - `value`: A reference to the JSON value to bind to the variable name.
+    ///
+    /// # Returns
+    ///
+    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn bind_ref(
+        &mut self,
+        name: impl Into<Box<str>>,
+        value: &'var serde_json::Value,
+    ) -> &mut Self {
+        self.bindings.insert(name.into(), Cow::Borrowed(value));
+        self
+    }
+
+    /// Bind multiple references to JSON values in this environment, which allows the values
+    /// to be shared across multiple environments without cloning. Additionally, when possible,
+    /// the return value of an evaluation can be a reference to one of the bindings or literals,
+    /// which can be more efficient than returning an owned value.
+    /// If you want to bind owned values instead of references, see [`EnvBuilder::bind_multiple`].
+    ///
+    /// # Parameters
+    ///
+    /// - `vars`: An iterable of `(name, value)` pairs, where `name` is the variable name to bind
+    ///   and `value` is a reference to the JSON value to bind to that name.
+    ///
+    /// # Returns
+    ///
+    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn bind_ref_multiple(
+        &mut self,
+        vars: impl IntoIterator<Item = (impl Into<Box<str>>, &'var serde_json::Value)>,
+    ) -> &mut Self {
+        for (name, value) in vars {
+            self.bindings.insert(name.into(), Cow::Borrowed(value));
+        }
+        self
+    }
+
+    /// Use a custom vtable for this environment instead of the default one.
+    /// This allows you to override the default function definitions or add new ones.
+    ///
+    /// Tip: You can create a custom vtable by cloning the default one and modifying it, e.g.:
+    /// ```rust
+    /// use sifter::{Literal, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallError, EvalError};
+    ///
+    /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
+    ///     // Your function implementation goes here
+    ///     if args.is_empty() {
+    ///         return Err(FnCallError {
+    ///             fn_name: "my_func".to_string(),
+    ///             reason: EvalError::ArgumentCount {
+    ///                 expected: 0,
+    ///                 got: args.len(),
+    ///             }
+    ///             .into(),
+    ///         });
+    ///     }
+    ///
+    ///     Ok(Literal::Int(42))
+    /// }
+    ///
+    /// let mut custom_vtable = DEFAULT_VTABLE.clone();
+    /// custom_vtable.insert("my_func", my_func);
+    /// let env = Env::new()
+    ///    .use_vtable(custom_vtable)
+    ///   .build();
+    /// ```
+    ///
+    /// # Parameters
+    ///
+    /// - `vtable`: The custom vtable to use for this environment.
+    ///
+    /// # Returns
+    ///
+    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn use_vtable(&mut self, vtable: VTable) -> &mut Self {
+        self.vtable = Some(vtable);
+        self
+    }
+
+    /// Finish the construction of the [`Env`] and return the final instance.
+    ///
+    /// This will clone the variable bindings and vtable from this builder into the new `Env`.
+    /// However, since `EnvBuilder` is typically dropped after this, Rust is likely to optimize
+    /// away the cloning of the bindings and vtable in release mode, so this should not have a
+    /// significant performance impact in practice.
+    ///
+    /// # Returns
+    ///
+    /// - An [`Env`] instance containing the variable bindings and vtable configured in this builder.
+    #[must_use]
+    pub fn build(&mut self) -> Env<'var> {
+        // Rust is likely to optimize away the .clone() here since EnvBuilder is typically dropped after this
+        // See: https://docs.rs/derive_builder/0.20.2/derive_builder/#-performance-considerations
+        let vtable = self
+            .vtable
+            .clone()
+            .unwrap_or_else(|| DEFAULT_VTABLE.clone());
+
+        Env {
+            bindings: self.bindings.clone(),
+            vtable,
+        }
     }
 }
 

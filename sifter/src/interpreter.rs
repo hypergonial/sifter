@@ -1,126 +1,11 @@
-use std::{borrow::Cow, collections::HashMap};
-
-use thiserror::Error;
+use std::borrow::Cow;
 
 use crate::{
-    functions::{FnCallError, VTABLE, VTable},
-    types::{FunctionItem, VarAccess, VarAccessError},
+    errors::EvalError,
+    types::{Env, FunctionItem, VarAccess},
 };
 
 use super::types::{Exp, Literal};
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum EvalError {
-    #[error(transparent)]
-    VarAccess(#[from] VarAccessError),
-    #[error(transparent)]
-    FnCallError(#[from] FnCallError),
-    #[error("Undefined function: {fn_name}")]
-    FunctionNotFound { fn_name: String },
-    #[error("Type Error: {message}")]
-    TypeError { message: String },
-    #[error("Value Error: {message}")]
-    ValueError { message: String },
-    #[error("Regex Error: {message}")]
-    RegexError { message: String },
-    #[error("Argument Error: Expected {expected} arguments, but got {got}")]
-    ArgumentCount { expected: usize, got: usize },
-}
-
-#[derive(Debug, Clone)]
-pub struct Env<'var> {
-    bindings: HashMap<Box<str>, Cow<'var, serde_json::Value>>,
-    vtable: VTable,
-}
-
-impl<'var> Env<'var> {
-    #[expect(clippy::new_ret_no_self)]
-    pub fn new() -> EnvBuilder<'var> {
-        EnvBuilder::new()
-    }
-
-    pub fn new_with_vtable(
-        bindings: HashMap<Box<str>, impl Into<Cow<'var, serde_json::Value>>>,
-        vtable: VTable,
-    ) -> Self {
-        Self {
-            bindings: bindings.into_iter().map(|(k, v)| (k, v.into())).collect(),
-            vtable,
-        }
-    }
-
-    #[inline]
-    pub const fn bindings(&self) -> &HashMap<Box<str>, Cow<'var, serde_json::Value>> {
-        &self.bindings
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct EnvBuilder<'var> {
-    bindings: HashMap<Box<str>, Cow<'var, serde_json::Value>>,
-    vtable: Option<VTable>,
-}
-
-impl<'var> EnvBuilder<'var> {
-    pub fn new() -> Self {
-        Self {
-            bindings: HashMap::new(),
-            vtable: None,
-        }
-    }
-
-    #[must_use]
-    pub fn bind(&mut self, name: impl Into<Box<str>>, value: serde_json::Value) -> &mut Self {
-        self.bindings.insert(name.into(), Cow::Owned(value));
-        self
-    }
-
-    pub fn bind_multiple(
-        &mut self,
-        vars: impl IntoIterator<Item = (impl Into<Box<str>>, serde_json::Value)>,
-    ) -> &mut Self {
-        for (name, value) in vars {
-            self.bindings.insert(name.into(), Cow::Owned(value));
-        }
-        self
-    }
-
-    pub fn bind_ref(
-        &mut self,
-        name: impl Into<Box<str>>,
-        value: &'var serde_json::Value,
-    ) -> &mut Self {
-        self.bindings.insert(name.into(), Cow::Borrowed(value));
-        self
-    }
-
-    pub fn bind_ref_multiple(
-        &mut self,
-        vars: impl IntoIterator<Item = (impl Into<Box<str>>, &'var serde_json::Value)>,
-    ) -> &mut Self {
-        for (name, value) in vars {
-            self.bindings.insert(name.into(), Cow::Borrowed(value));
-        }
-        self
-    }
-
-    pub fn use_vtable(&mut self, vtable: VTable) -> &mut Self {
-        self.vtable = Some(vtable);
-        self
-    }
-
-    #[must_use]
-    pub fn build(&mut self) -> Env<'var> {
-        // Rust is likely to optimize away the .clone() here since EnvBuilder is typically dropped after this
-        // See: https://docs.rs/derive_builder/0.20.2/derive_builder/#-performance-considerations
-        let vtable = self.vtable.clone().unwrap_or_else(|| VTABLE.clone());
-
-        Env {
-            bindings: self.bindings.clone(),
-            vtable,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 enum Cmp {
@@ -260,7 +145,7 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
     env: &'var Env<'var>,
 ) -> Result<Cow<'out, Literal<'out>>, EvalError> {
     let func = env
-        .vtable
+        .vtable()
         .get(function.name())
         .ok_or_else(|| EvalError::FunctionNotFound {
             fn_name: function.name().to_string(),
@@ -302,6 +187,8 @@ pub(super) fn eval<'exp: 'out, 'var: 'out, 'out>(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::sync::LazyLock;
+
+    use crate::{FnCallError, VarAccessError};
 
     use super::*;
 

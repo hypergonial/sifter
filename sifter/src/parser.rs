@@ -128,7 +128,7 @@ pub(super) fn parse_variable_name(input: &str) -> IResult<&str, VarAccess> {
                     index.map(|i| i.parse::<usize>().expect("Failed to parse index")),
                 )
             })
-            .collect(),
+            .collect::<Vec<_>>(),
     );
 
     Ok((input, varaccess))
