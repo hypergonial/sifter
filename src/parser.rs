@@ -104,6 +104,21 @@ pub(super) fn parse_variable_name(input: &str) -> IResult<&str, VarAccess> {
     )
     .parse(input)?;
 
+    // If any of the names start with a digit, it's an error (e.g. "foo.0bar")
+    for (name, _) in &names {
+        if name
+            .chars()
+            .next()
+            .expect("Variable name is empty, should have been caught by parse_non_keyword")
+            .is_ascii_digit()
+        {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Digit,
+            )));
+        }
+    }
+
     let varaccess = VarAccess::new(
         names
             .into_iter()
@@ -397,6 +412,20 @@ mod tests {
                 ])
             ))
         );
+        // Variable names with digits should work as long as they don't start with a digit
+        assert_eq!(
+            parse_variable_name("foo1.bar2[3].baz4"),
+            Ok((
+                "",
+                VarAccess::new(vec![
+                    VarName::new("foo1", None),
+                    VarName::new("bar2", Some(3)),
+                    VarName::new("baz4", None),
+                ])
+            ))
+        );
+        // Variable names that start with a digit should fail
+        assert!(parse_variable_name("foo.0bar").is_err());
     }
 
     #[test]
