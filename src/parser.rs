@@ -13,7 +13,7 @@ use nom::{
 
 use super::types::{Exp, FunctionItem, Literal, VarAccess, VarName};
 
-static KEYWORDS: [&str; 2] = ["true", "false"];
+static KEYWORDS: [&str; 3] = ["true", "false", "null"];
 
 struct BinaryOperator {
     op: &'static str,
