@@ -592,15 +592,6 @@ impl<'a> Exp<'a> {
     }
 }
 
-// FIXME: Broken because FromStr cant deal with lifetimes
-/* impl FromStr for Exp<'static> {
-    type Err = nom::error::Error<String>;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-
-    }
-} */
-
 impl<'a> TryFrom<&'a str> for Exp<'a> {
     type Error = nom::error::Error<String>;
 
