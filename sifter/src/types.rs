@@ -1,8 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
     fmt::{Display, Write},
-    sync::Arc,
 };
 
 use nom::Finish;
@@ -12,6 +10,20 @@ use thiserror::Error;
 use crate::interpreter::{Env, EvalError};
 
 use super::parser::{parse_exp, parse_variable_name};
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum VarAccessError {
+    #[error("Variable access is empty")]
+    EmptyAccess,
+    #[error("Variable not found: {variable}")]
+    VariableNotFound { variable: String },
+    #[error("Type error: {message}")]
+    TypeError { message: String },
+    #[error("Index out of bounds: {message}")]
+    IndexOutOfBounds { message: String },
+    #[error("Conversion error: {message}")]
+    ConversionError { message: String },
+}
 
 /// A type of a literal value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,15 +49,34 @@ impl Display for Type {
 
 /// A literal value that can be used in expressions.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
+pub enum Literal<'a> {
     Int(i64),
     Float(f64),
     Bool(bool),
-    String(Arc<str>),
+    String(Cow<'a, str>),
     Null,
 }
 
-impl Literal {
+fn cow_into_static<T: ?Sized + ToOwned>(cow: Cow<'_, T>) -> Cow<'static, T> {
+    match cow {
+        Cow::Borrowed(s) => Cow::Owned(s.to_owned()),
+        Cow::Owned(s) => Cow::Owned(s),
+    }
+}
+
+impl Literal<'_> {
+    pub fn into_owned(self) -> Literal<'static> {
+        match self {
+            Literal::Int(i) => Literal::Int(i),
+            Literal::Float(f) => Literal::Float(f),
+            Literal::Bool(b) => Literal::Bool(b),
+            Literal::String(s) => Literal::String(cow_into_static(s)),
+            Literal::Null => Literal::Null,
+        }
+    }
+}
+
+impl Literal<'_> {
     /// The type of the literal value.
     pub const fn type_name(&self) -> Type {
         match self {
@@ -58,7 +89,7 @@ impl Literal {
     }
 }
 
-impl Display for Literal {
+impl Display for Literal<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Int(i) => write!(f, "{i}"),
@@ -70,13 +101,13 @@ impl Display for Literal {
     }
 }
 
-impl<'a> From<&'a Literal> for bool {
+impl<'a> From<&'a Literal<'a>> for bool {
     // Truthiness of a literal value:
     // - Integers are false if they are 0, true otherwise
     // - Floats are false if they are 0.0, true otherwise
     // - Booleans are their own truthiness
     // - Strings are false if they are empty, true otherwise
-    fn from(lit: &'a Literal) -> Self {
+    fn from(lit: &'a Literal<'a>) -> Self {
         match lit {
             Literal::Int(i) => *i != 0,
             Literal::Float(f) => *f != 0.0,
@@ -87,16 +118,16 @@ impl<'a> From<&'a Literal> for bool {
     }
 }
 
-impl From<Literal> for Type {
-    fn from(lit: Literal) -> Self {
+impl<'a> From<Literal<'a>> for Type {
+    fn from(lit: Literal<'a>) -> Self {
         lit.type_name()
     }
 }
 
-impl<'a> TryFrom<&'a Literal> for i64 {
+impl<'a> TryFrom<&'a Literal<'a>> for i64 {
     type Error = String;
 
-    fn try_from(value: &'a Literal) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a Literal<'a>) -> Result<Self, Self::Error> {
         match value {
             Literal::Int(i) => Ok(*i),
             Literal::Float(f) => Ok(*f as Self),
@@ -109,10 +140,10 @@ impl<'a> TryFrom<&'a Literal> for i64 {
     }
 }
 
-impl<'a> TryFrom<&'a Literal> for f64 {
+impl<'a> TryFrom<&'a Literal<'a>> for f64 {
     type Error = String;
 
-    fn try_from(value: &'a Literal) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a Literal<'a>) -> Result<Self, Self::Error> {
         match value {
             Literal::Float(f) => Ok(*f),
             Literal::Int(i) => Ok(*i as Self),
@@ -125,8 +156,8 @@ impl<'a> TryFrom<&'a Literal> for f64 {
     }
 }
 
-impl<'a> From<&'a Literal> for Arc<str> {
-    fn from(value: &'a Literal) -> Self {
+impl<'a> From<&'a Literal<'a>> for Cow<'a, str> {
+    fn from(value: &'a Literal<'a>) -> Self {
         match value {
             Literal::String(s) => s.clone(),
             Literal::Int(i) => i.to_string().into(),
@@ -137,7 +168,7 @@ impl<'a> From<&'a Literal> for Arc<str> {
     }
 }
 
-impl TryFrom<serde_json::Value> for Literal {
+impl TryFrom<serde_json::Value> for Literal<'_> {
     type Error = String;
 
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
@@ -151,6 +182,25 @@ impl TryFrom<serde_json::Value> for Literal {
             }
             serde_json::Value::Number(n) => Err(format!("Unsupported number type: {n}")),
             serde_json::Value::Bool(b) => Ok(Self::Bool(b)),
+            _ => Err(format!("Unsupported value type: {value:?}")),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a serde_json::Value> for Literal<'a> {
+    type Error = String;
+
+    fn try_from(value: &'a serde_json::Value) -> Result<Self, Self::Error> {
+        match value {
+            serde_json::Value::String(s) => Ok(Self::String(Cow::Borrowed(s))),
+            serde_json::Value::Number(n) if n.is_i64() => {
+                Ok(Self::Int(n.as_i64().expect("Failed to parse integer")))
+            }
+            serde_json::Value::Number(n) if n.is_f64() => {
+                Ok(Self::Float(n.as_f64().expect("Failed to parse float")))
+            }
+            serde_json::Value::Number(n) => Err(format!("Unsupported number type: {n}")),
+            serde_json::Value::Bool(b) => Ok(Self::Bool(*b)),
             _ => Err(format!("Unsupported value type: {value:?}")),
         }
     }
@@ -178,20 +228,6 @@ impl VarName {
     pub const fn index(&self) -> Option<usize> {
         self.index
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum VarAccessError {
-    #[error("Variable access is empty")]
-    EmptyAccess,
-    #[error("Variable not found: {variable}")]
-    VariableNotFound { variable: String },
-    #[error("Type error: {message}")]
-    TypeError { message: String },
-    #[error("Index out of bounds: {message}")]
-    IndexOutOfBounds { message: String },
-    #[error("Conversion error: {message}")]
-    ConversionError { message: String },
 }
 
 /// A variable access, which is a series of variable names.
@@ -224,11 +260,11 @@ impl VarAccess {
         &self.names
     }
 
-    fn access_names(
+    fn access_names<'a>(
         mut names: &[VarName],
-        value: &serde_json::Value,
+        value: &'a serde_json::Value,
         ignore_first: bool,
-    ) -> Result<Option<Literal>, VarAccessError> {
+    ) -> Result<Option<Literal<'a>>, VarAccessError> {
         let mut current = value;
 
         let var = names.last().ok_or(VarAccessError::EmptyAccess)?;
@@ -295,17 +331,17 @@ impl VarAccess {
                         ),
                     })?;
 
-                Literal::try_from(value.clone()).map(Some).map_err(|e| {
-                    VarAccessError::ConversionError {
+                Literal::try_from(value)
+                    .map(Some)
+                    .map_err(|e| VarAccessError::ConversionError {
                         message: format!("Failed to convert value at '{}': {e}", var.name()),
-                    }
-                })
+                    })
             }
-            v => Literal::try_from(v.clone()).map(Some).map_err(|e| {
-                VarAccessError::ConversionError {
+            v => Literal::try_from(v)
+                .map(Some)
+                .map_err(|e| VarAccessError::ConversionError {
                     message: format!("Failed to convert value at '{}': {e}", var.name()),
-                }
-            }),
+                }),
         }
     }
 
@@ -317,7 +353,10 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access(&self, value: &serde_json::Value) -> Result<Option<Literal>, VarAccessError> {
+    pub fn access<'a>(
+        &self,
+        value: &'a serde_json::Value,
+    ) -> Result<Option<Literal<'a>>, VarAccessError> {
         Self::access_names(&self.names, value, false)
     }
 
@@ -329,20 +368,21 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access_from_bindings(
+    pub fn access_from_bindings<'a>(
         &self,
-        bindings: &HashMap<Box<str>, serde_json::Value>,
-    ) -> Result<Option<Literal>, VarAccessError> {
+        env: &'a Env<'a>,
+    ) -> Result<Option<Literal<'a>>, VarAccessError> {
         if self.names.is_empty() {
             return Ok(None);
         }
 
         let first_name = self.names[0].name();
-        let value = bindings
-            .get(first_name)
-            .ok_or_else(|| VarAccessError::VariableNotFound {
-                variable: first_name.to_string(),
-            })?;
+        let value =
+            env.bindings()
+                .get(first_name)
+                .ok_or_else(|| VarAccessError::VariableNotFound {
+                    variable: first_name.to_string(),
+                })?;
 
         Self::access_names(&self.names, value, true)
     }
@@ -390,10 +430,10 @@ impl<'a> Deserialize<'a> for VarAccess {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Exp {
-    Literal(Literal),
+pub enum Exp<'a> {
+    Literal(Literal<'a>),
+    FnCall(FunctionItem<'a>),
     Var(VarAccess),
-    FnCall(FunctionItem),
     Neg(Box<Self>),
     Or(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
@@ -405,30 +445,23 @@ pub enum Exp {
     Leq(Box<Self>, Box<Self>),
 }
 
-impl Exp {
-    /// Parse an expression from the input string and return an `Exp` enum
+impl<'a> Exp<'a> {
+    /// Create a new `Exp` from a string representation of an expression.
     ///
-    /// ## Parameters
+    /// # Parameters
     ///
-    /// - `input`: The input string to parse, e.g. "1 + 2 * 3"
+    /// - `string`: The string representation of the expression to parse.
     ///
-    /// ## Returns
-    /// - The parsed expression
+    /// # Returns
     ///
-    /// ## Errors
+    /// - `Ok(Exp)` if the expression was successfully parsed from the string.
     ///
-    /// - If the input string does not match the expected pattern, a parsing error will be returned.
-    pub fn parse(input: &str) -> Result<Self, nom::error::Error<&str>> {
-        let (remainder, exp) = parse_exp(input).finish()?;
-
-        if !remainder.trim().is_empty() {
-            return Err(nom::error::Error::new(
-                remainder,
-                nom::error::ErrorKind::Eof,
-            ));
-        }
-
-        Ok(exp)
+    /// # Errors
+    ///
+    /// - If there was an error parsing the expression from the string,
+    ///   such as a syntax error, an `Err` will be returned containing the parsing error details.
+    pub fn new(&self, string: impl Into<&'a str>) -> Result<Self, nom::error::Error<String>> {
+        string.into().try_into()
     }
 
     /// Evaluate the expression in the given environment and return the resulting literal value.
@@ -444,7 +477,11 @@ impl Exp {
     /// ## Errors
     ///
     /// - If there was an error during evaluation, such as a type error or undefined variable, an `EvalError` will be returned.
-    pub fn eval(&self, env: &Env) -> Result<Cow<'_, Literal>, EvalError> {
+    pub fn eval<'b, 'c>(&'a self, env: &'b Env<'b>) -> Result<Cow<'c, Literal<'c>>, EvalError>
+    where
+        'a: 'c,
+        'b: 'c,
+    {
         super::interpreter::eval(self, env)
     }
 
@@ -458,7 +495,7 @@ impl Exp {
     ///
     /// - An `Exp` enum representing the literal value.
     #[inline]
-    pub const fn literal(lit: Literal) -> Self {
+    pub const fn literal(lit: Literal<'a>) -> Self {
         Self::Literal(lit)
     }
 
@@ -504,7 +541,7 @@ impl Exp {
     ///
     /// - An `Exp` enum representing the function call.
     #[inline]
-    pub const fn fn_call(func: FunctionItem) -> Self {
+    pub const fn fn_call(func: FunctionItem<'a>) -> Self {
         Self::FnCall(func)
     }
 
@@ -555,32 +592,50 @@ impl Exp {
     }
 }
 
-impl<'a> TryFrom<&'a str> for Exp {
-    type Error = nom::error::Error<&'a str>;
+// FIXME: Broken because FromStr cant deal with lifetimes
+/* impl FromStr for Exp<'static> {
+    type Err = nom::error::Error<String>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+    }
+} */
+
+impl<'a> TryFrom<&'a str> for Exp<'a> {
+    type Error = nom::error::Error<String>;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        Self::parse(value)
+        let (remainder, exp) = parse_exp(value).finish()?;
+
+        if !remainder.trim().is_empty() {
+            return Err(nom::error::Error::new(
+                remainder.to_string(),
+                nom::error::ErrorKind::Eof,
+            ));
+        }
+
+        Ok(exp)
     }
 }
 
-impl<'a> Deserialize<'a> for Exp {
+impl<'a> Deserialize<'a> for Exp<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
-        let s = String::deserialize(deserializer)?;
-        Self::try_from(s.as_str()).map_err(serde::de::Error::custom)
+        let s = <&str>::deserialize(deserializer)?;
+        Self::try_from(s).map_err(serde::de::Error::custom)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FunctionItem {
+pub struct FunctionItem<'a> {
     name: String,
-    args: Vec<Exp>,
+    args: Vec<Exp<'a>>,
 }
 
-impl FunctionItem {
-    pub fn new(name: impl Into<String>, args: impl Into<Vec<Exp>>) -> Self {
+impl<'a> FunctionItem<'a> {
+    pub fn new(name: impl Into<String>, args: impl Into<Vec<Exp<'a>>>) -> Self {
         Self {
             name: name.into(),
             args: args.into(),
@@ -591,7 +646,7 @@ impl FunctionItem {
         &self.name
     }
 
-    pub fn args(&self) -> &[Exp] {
+    pub fn args(&self) -> &[Exp<'_>] {
         &self.args
     }
 }
@@ -643,17 +698,17 @@ mod tests {
 
     #[test]
     fn test_var_access_from_bindings() {
-        let bindings = HashMap::from([
-            ("test".into(), TEST_VALUE_1.clone()),
-            ("other".into(), TEST_VALUE_2.clone()),
-        ]);
+        let env = Env::new()
+            .bind_ref("test", &TEST_VALUE_1)
+            .bind_ref("other", &TEST_VALUE_2)
+            .build();
 
         let var_access = VarAccess::try_from("test.foo.bar[1].baz").unwrap();
-        let result = var_access.access_from_bindings(&bindings).unwrap();
+        let result = var_access.access_from_bindings(&env).unwrap();
         assert_eq!(result, Some(Literal::Int(43)));
 
         let var_access = VarAccess::try_from("other.arr[1]").unwrap();
-        let result = var_access.access_from_bindings(&bindings).unwrap();
+        let result = var_access.access_from_bindings(&env).unwrap();
         assert_eq!(result, Some(Literal::Int(2)));
     }
 }

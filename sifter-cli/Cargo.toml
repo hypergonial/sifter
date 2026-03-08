@@ -5,6 +5,7 @@ version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
 license = { workspace = true }
+description = "Querying JSON data from the command line"
 
 [lints]
 workspace = true
@@ -12,3 +13,4 @@ workspace = true
 [dependencies]
 sifter = { path = "../sifter" }
 clap = { version = "4.5.60", features = ["derive"] }
+serde_json = "1.0.149"

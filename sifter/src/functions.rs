@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, LazyLock},
-};
+use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
 use thiserror::Error;
 
@@ -17,9 +14,9 @@ pub struct FnCallError {
     pub reason: Box<EvalError>,
 }
 
-pub type FnArgs<'a> = &'a [Literal];
-pub type FnResult = Result<Literal, FnCallError>;
-pub type FnCallback = fn(FnArgs<'_>) -> FnResult;
+pub type FnArgs<'a> = &'a [Literal<'a>];
+pub type FnResult<'a> = Result<Literal<'a>, FnCallError>;
+pub type FnCallback = for<'a> fn(FnArgs<'a>) -> FnResult<'a>;
 
 pub type VTable = HashMap<&'static str, FnCallback>;
 
@@ -41,8 +38,8 @@ pub static VTABLE: LazyLock<VTable> = LazyLock::new(|| {
 fn string_unary<'a>(
     fn_name: &'static str,
     args: FnArgs<'a>,
-    function: impl Fn(&'a str) -> FnResult,
-) -> FnResult {
+    function: impl Fn(&'a str) -> FnResult<'a>,
+) -> FnResult<'a> {
     if args.len() != 1 {
         return Err(FnCallError {
             fn_name: fn_name.to_string(),
@@ -69,8 +66,8 @@ fn string_unary<'a>(
 fn string_binary<'a>(
     fn_name: &'static str,
     args: FnArgs<'a>,
-    function: impl Fn(&'a str, &'a str) -> FnResult,
-) -> FnResult {
+    function: impl Fn(&'a str, &'a str) -> FnResult<'a>,
+) -> FnResult<'a> {
     if args.len() != 2 {
         return Err(FnCallError {
             fn_name: fn_name.to_string(),
@@ -94,29 +91,29 @@ fn string_binary<'a>(
     }
 }
 
-fn length(args: FnArgs<'_>) -> FnResult {
+fn length(args: FnArgs<'_>) -> FnResult<'_> {
     string_unary("length", args, |s| Ok(Literal::Int(s.len() as i64)))
 }
 
-fn starts_with(args: FnArgs<'_>) -> FnResult {
+fn starts_with(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("startsWith", args, |s, other| {
         Ok(Literal::Bool(s.starts_with(other)))
     })
 }
 
-fn ends_with(args: FnArgs<'_>) -> FnResult {
+fn ends_with(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("endsWith", args, |s, other| {
         Ok(Literal::Bool(s.ends_with(other)))
     })
 }
 
-fn contains(args: FnArgs<'_>) -> FnResult {
+fn contains(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("contains", args, |s, other| {
         Ok(Literal::Bool(s.contains(other)))
     })
 }
 
-fn matches(args: FnArgs<'_>) -> FnResult {
+fn matches(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("matches", args, |s, pattern| {
         let re = regex::Regex::new(pattern).map_err(|e| FnCallError {
             fn_name: "matches".to_string(),
@@ -129,7 +126,7 @@ fn matches(args: FnArgs<'_>) -> FnResult {
     })
 }
 
-fn into_bool(args: FnArgs<'_>) -> FnResult {
+fn into_bool(args: FnArgs<'_>) -> FnResult<'_> {
     if args.len() != 1 {
         return Err(FnCallError {
             fn_name: "bool".to_string(),
@@ -144,7 +141,7 @@ fn into_bool(args: FnArgs<'_>) -> FnResult {
     Ok(Literal::Bool(bool::from(&args[0])))
 }
 
-fn into_string(args: FnArgs<'_>) -> FnResult {
+fn into_string<'a>(args: FnArgs<'a>) -> FnResult<'a> {
     if args.len() != 1 {
         return Err(FnCallError {
             fn_name: "string".to_string(),
@@ -156,17 +153,17 @@ fn into_string(args: FnArgs<'_>) -> FnResult {
         });
     }
 
-    let string: Arc<str> = (&args[0]).into();
+    let string: Cow<'a, str> = (&args[0]).into();
 
     Ok(Literal::String(string))
 }
 
-fn numeric_convert<T>(
+fn numeric_convert<'a, T>(
     fn_name: &'static str,
-    args: FnArgs<'_>,
-    convert: impl Fn(&Literal) -> Option<T>,
-    wrap: impl Fn(T) -> Literal,
-) -> FnResult {
+    args: FnArgs<'a>,
+    convert: impl Fn(&Literal<'a>) -> Option<T>,
+    wrap: impl Fn(T) -> Literal<'a>,
+) -> FnResult<'a> {
     if args.len() != 1 {
         return Err(FnCallError {
             fn_name: fn_name.to_string(),
@@ -192,10 +189,10 @@ fn numeric_convert<T>(
         .map(wrap)
 }
 
-fn into_int(args: FnArgs<'_>) -> FnResult {
+fn into_int(args: FnArgs<'_>) -> FnResult<'_> {
     numeric_convert("int", args, |v| i64::try_from(v).ok(), Literal::Int)
 }
 
-fn into_float(args: FnArgs<'_>) -> FnResult {
+fn into_float(args: FnArgs<'_>) -> FnResult<'_> {
     numeric_convert("float", args, |v| f64::try_from(v).ok(), Literal::Float)
 }

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap};
 
 use thiserror::Error;
 
@@ -27,26 +27,98 @@ pub enum EvalError {
     ArgumentCount { expected: usize, got: usize },
 }
 
-pub struct Env {
-    bindings: HashMap<Box<str>, serde_json::Value>,
+#[derive(Debug, Clone)]
+pub struct Env<'var> {
+    bindings: HashMap<Box<str>, Cow<'var, serde_json::Value>>,
     vtable: VTable,
 }
 
-impl Env {
-    pub fn new(bindings: HashMap<Box<str>, serde_json::Value>) -> Self {
+impl<'var> Env<'var> {
+    #[expect(clippy::new_ret_no_self)]
+    pub fn new() -> EnvBuilder<'var> {
+        EnvBuilder::new()
+    }
+
+    pub fn new_with_vtable(
+        bindings: HashMap<Box<str>, impl Into<Cow<'var, serde_json::Value>>>,
+        vtable: VTable,
+    ) -> Self {
         Self {
-            bindings,
-            vtable: VTABLE.clone(),
+            bindings: bindings.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            vtable,
         }
     }
 
-    pub fn new_with_vtable(bindings: HashMap<Box<str>, serde_json::Value>, vtable: VTable) -> Self {
-        Self { bindings, vtable }
+    #[inline]
+    pub const fn bindings(&self) -> &HashMap<Box<str>, Cow<'var, serde_json::Value>> {
+        &self.bindings
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct EnvBuilder<'var> {
+    bindings: HashMap<Box<str>, Cow<'var, serde_json::Value>>,
+    vtable: Option<VTable>,
+}
+
+impl<'var> EnvBuilder<'var> {
+    pub fn new() -> Self {
+        Self {
+            bindings: HashMap::new(),
+            vtable: None,
+        }
     }
 
-    #[inline]
-    pub const fn bindings(&self) -> &HashMap<Box<str>, serde_json::Value> {
-        &self.bindings
+    #[must_use]
+    pub fn bind(&mut self, name: impl Into<Box<str>>, value: serde_json::Value) -> &mut Self {
+        self.bindings.insert(name.into(), Cow::Owned(value));
+        self
+    }
+
+    pub fn bind_multiple(
+        &mut self,
+        vars: impl IntoIterator<Item = (impl Into<Box<str>>, serde_json::Value)>,
+    ) -> &mut Self {
+        for (name, value) in vars {
+            self.bindings.insert(name.into(), Cow::Owned(value));
+        }
+        self
+    }
+
+    pub fn bind_ref(
+        &mut self,
+        name: impl Into<Box<str>>,
+        value: &'var serde_json::Value,
+    ) -> &mut Self {
+        self.bindings.insert(name.into(), Cow::Borrowed(value));
+        self
+    }
+
+    pub fn bind_ref_multiple(
+        &mut self,
+        vars: impl IntoIterator<Item = (impl Into<Box<str>>, &'var serde_json::Value)>,
+    ) -> &mut Self {
+        for (name, value) in vars {
+            self.bindings.insert(name.into(), Cow::Borrowed(value));
+        }
+        self
+    }
+
+    pub fn use_vtable(&mut self, vtable: VTable) -> &mut Self {
+        self.vtable = Some(vtable);
+        self
+    }
+
+    #[must_use]
+    pub fn build(&mut self) -> Env<'var> {
+        // Rust is likely to optimize away the .clone() here since EnvBuilder is typically dropped after this
+        // See: https://docs.rs/derive_builder/0.20.2/derive_builder/#-performance-considerations
+        let vtable = self.vtable.clone().unwrap_or_else(|| VTABLE.clone());
+
+        Env {
+            bindings: self.bindings.clone(),
+            vtable,
+        }
     }
 }
 
@@ -58,90 +130,47 @@ enum Cmp {
     Geq,
 }
 
-#[expect(clippy::needless_pass_by_value)]
-fn expect_type<T>(
-    value: Cow<'_, Literal>,
-    extractor: impl Fn(&Literal) -> Option<T>,
+fn expect_type<'a, 'b, T>(
+    value: &'b Literal<'a>,
+    extractor: impl Fn(&'b Literal<'a>) -> Option<&'b T>,
     type_name: &str,
-) -> Result<T, EvalError> {
-    let value = value.as_ref();
-
+) -> Result<&'b T, EvalError> {
     extractor(value).ok_or_else(|| EvalError::TypeError {
         message: format!("Expected {}, got {}", type_name, value.type_name()),
     })
 }
 
-fn expect_bool(value: Cow<'_, Literal>) -> Result<bool, EvalError> {
+fn expect_bool(value: &Literal<'_>) -> Result<bool, EvalError> {
     expect_type(
         value,
-        |l| match l {
-            Literal::Bool(b) => Some(*b),
+        move |l| match l {
+            Literal::Bool(b) => Some(b),
             _ => None,
         },
         "a boolean",
     )
-}
-
-#[expect(dead_code)]
-fn expect_string(value: Cow<'_, Literal>) -> Result<Arc<str>, EvalError> {
-    expect_type(
-        value,
-        |l| match l {
-            Literal::String(s) => Some(s.clone()),
-            _ => None,
-        },
-        "a string",
-    )
-}
-
-#[expect(dead_code)]
-fn expect_int(value: Cow<'_, Literal>) -> Result<i64, EvalError> {
-    expect_type(
-        value,
-        |l| match l {
-            Literal::Int(i) => Some(*i),
-            _ => None,
-        },
-        "an integer",
-    )
-}
-
-#[expect(dead_code)]
-fn expect_float(value: Cow<'_, Literal>) -> Result<f64, EvalError> {
-    expect_type(
-        value,
-        |l| match l {
-            Literal::Float(f) => Some(*f),
-            _ => None,
-        },
-        "a float",
-    )
-}
-
-#[expect(dead_code)]
-fn expect_null(value: Cow<'_, Literal>) -> Result<(), EvalError> {
-    expect_type(
-        value,
-        |l| match l {
-            Literal::Null => Some(()),
-            _ => None,
-        },
-        "null",
-    )
+    .map(ToOwned::to_owned)
 }
 
 #[inline]
 #[expect(clippy::unnecessary_wraps)]
-const fn out(literal: Literal) -> Result<Cow<'static, Literal>, EvalError> {
+const fn out(literal: Literal<'_>) -> Result<Cow<'_, Literal<'_>>, EvalError> {
     Ok(Cow::Owned(literal))
 }
 
-fn eval_neg<'a>(exp: &'a Exp, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
+fn eval_neg<'a: 'c, 'b: 'c, 'c>(
+    exp: &'a Exp<'a>,
+    env: &'b Env<'b>,
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
     let value: bool = eval(exp, env)?.as_ref().into();
     out(Literal::Bool(!value))
 }
 
-fn eval_and<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
+fn eval_and<'a: 'c, 'b: 'c, 'c>(
+    exp1: &'a Exp<'a>,
+    exp2: &'a Exp<'a>,
+    env: &'b Env<'b>,
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     if bool::from(value1.as_ref()) {
         let value2 = eval(exp2, env)?;
@@ -151,7 +180,11 @@ fn eval_and<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Liter
     }
 }
 
-fn eval_or<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
+fn eval_or<'a: 'c, 'b: 'c, 'c>(
+    exp1: &'a Exp<'a>,
+    exp2: &'a Exp<'a>,
+    env: &'b Env<'b>,
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     if bool::from(value1.as_ref()) {
         Ok(value1)
@@ -161,24 +194,32 @@ fn eval_or<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Litera
     }
 }
 
-fn eval_eq<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
+fn eval_eq<'a: 'c, 'b: 'c, 'c>(
+    exp1: &'a Exp,
+    exp2: &'a Exp,
+    env: &'b Env<'b>,
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     let value2 = eval(exp2, env)?;
 
     Ok(Cow::Owned(Literal::Bool(value1 == value2)))
 }
 
-fn eval_neq<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
-    let res = expect_bool(eval_eq(exp1, exp2, env)?)?;
+fn eval_neq<'a: 'c, 'b: 'c, 'c>(
+    exp1: &'a Exp<'a>,
+    exp2: &'a Exp<'a>,
+    env: &'b Env<'b>,
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+    let res = expect_bool(&*eval_eq(exp1, exp2, env)?)?;
     out(Literal::Bool(!res))
 }
 
-fn eval_cmp<'a>(
-    exp1: &'a Exp,
-    exp2: &'a Exp,
-    env: &Env,
+fn eval_cmp<'a: 'c, 'b: 'c, 'c>(
+    exp1: &'a Exp<'a>,
+    exp2: &'a Exp<'a>,
+    env: &'b Env<'b>,
     cmp: Cmp,
-) -> Result<Cow<'a, Literal>, EvalError> {
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     let value2 = eval(exp2, env)?;
 
@@ -205,13 +246,19 @@ fn eval_cmp<'a>(
     }
 }
 
-fn eval_varaccess<'a>(var: &'a VarAccess, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
-    var.access_from_bindings(&env.bindings)
+fn eval_varaccess<'a: 'c, 'b: 'c, 'c>(
+    var: &'a VarAccess,
+    env: &'b Env<'b>,
+) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+    var.access_from_bindings(env)
         .map_err(EvalError::VarAccess)
-        .map(|opt| opt.map_or(Cow::Owned(Literal::Null), Cow::Owned::<Literal>))
+        .map(|opt| opt.map_or(Cow::Owned(Literal::<'c>::Null), Cow::Owned::<Literal<'c>>))
 }
 
-fn eval_fncall<'a>(function: &'a FunctionItem, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
+fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
+    function: &'exp FunctionItem<'exp>,
+    env: &'var Env<'var>,
+) -> Result<Cow<'out, Literal<'out>>, EvalError> {
     let func = env
         .vtable
         .get(function.name())
@@ -219,17 +266,22 @@ fn eval_fncall<'a>(function: &'a FunctionItem, env: &Env) -> Result<Cow<'a, Lite
             fn_name: function.name().to_string(),
         })?;
 
-    let args: Vec<Literal> = function
+    let args: Vec<Literal<'out>> = function
         .args()
         .iter()
         .map(|arg| eval(arg, env))
         .map(|res| res.map(Cow::into_owned))
         .collect::<Result<Vec<_>, _>>()?;
 
-    func(&args).map_err(EvalError::FnCallError).map(Cow::Owned)
+    func(&args)
+        .map_err(EvalError::FnCallError)
+        .map(|l| Cow::Owned(l.into_owned()))
 }
 
-pub(super) fn eval<'a>(exp: &'a Exp, env: &Env) -> Result<Cow<'a, Literal>, EvalError> {
+pub(super) fn eval<'exp: 'out, 'var: 'out, 'out>(
+    exp: &'exp Exp,
+    env: &'var Env<'var>,
+) -> Result<Cow<'out, Literal<'out>>, EvalError> {
     match exp {
         Exp::Literal(literal) => Ok(Cow::Borrowed(literal)),
         Exp::Var(var) => eval_varaccess(var, env),
@@ -254,12 +306,12 @@ mod tests {
     use super::*;
 
     static ENV: LazyLock<Env> = LazyLock::new(|| {
-        let bindings = HashMap::from([
-            ("x".into(), serde_json::json!(42)),
-            ("y".into(), serde_json::json!("hello")),
-            ("z".into(), serde_json::json!(true)),
-            (
-                "foo".into(),
+        Env::new()
+            .bind("x", serde_json::json!(42))
+            .bind("y", serde_json::json!("hello"))
+            .bind("z", serde_json::json!(true))
+            .bind(
+                "foo",
                 serde_json::json!({
                     "bar": 123,
                     "baz": "world",
@@ -271,9 +323,8 @@ mod tests {
                         ]
                     }
                 }),
-            ),
-        ]);
-        Env::new(bindings)
+            )
+            .build()
     });
 
     static EXPS: LazyLock<[(&str, Result<Literal, EvalError>); 27]> = LazyLock::new(|| {
@@ -371,7 +422,7 @@ mod tests {
     fn test_exps() {
         for (exp_str, expected) in &*EXPS {
             println!("Testing expression: {exp_str}");
-            let exp = Exp::parse(exp_str).unwrap();
+            let exp = (*exp_str).try_into().unwrap();
             let result = eval(&exp, &ENV);
             assert_eq!(result.map(Cow::into_owned).as_ref(), expected.as_ref());
         }

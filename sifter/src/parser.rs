@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::borrow::Cow;
 
 use nom::{
     IResult, Parser,
@@ -15,13 +15,13 @@ use super::types::{Exp, FunctionItem, Literal, VarAccess, VarName};
 
 static KEYWORDS: [&str; 3] = ["true", "false", "null"];
 
-struct BinaryOperator {
+struct BinaryOperator<'a> {
     op: &'static str,
-    func: fn(Exp, Exp) -> Exp,
+    func: fn(Exp<'a>, Exp<'a>) -> Exp<'a>,
 }
 
-impl BinaryOperator {
-    fn new(op: &'static str, func: fn(Exp, Exp) -> Exp) -> Self {
+impl<'a> BinaryOperator<'a> {
+    const fn new(op: &'static str, func: fn(Exp<'a>, Exp<'a>) -> Exp<'a>) -> Self {
         Self { op, func }
     }
 }
@@ -53,7 +53,7 @@ fn double(input: &str) -> IResult<&str, f64> {
 }
 
 /// Parse a quoted string, handling both single and double quotes, as well as escaped characters
-fn string(input: &str) -> IResult<&str, Arc<str>> {
+fn string<'a>(input: &'a str) -> IResult<&'a str, Cow<'a, str>> {
     let (input, value) = alt((
         delimited(
             char('\''),
@@ -68,12 +68,12 @@ fn string(input: &str) -> IResult<&str, Arc<str>> {
     ))
     .parse(input)?;
 
-    let value: Arc<str> = match value {
-        None => Arc::from(""),
+    let value: Cow<'a, str> = match value {
+        None => Cow::from(""),
         Some(s) if s.contains("\\'") | s.contains("\\\"") => {
-            Arc::from(s.replace("\\'", "'").replace("\\\"", "\""))
+            Cow::from(s.replace("\\'", "'").replace("\\\"", "\""))
         }
-        Some(s) => Arc::from(s), // no escapes — zero copy from input into Arc
+        Some(s) => Cow::from(s), // no escapes — zero copy from input into Arc
     };
 
     Ok((input, value))
@@ -135,10 +135,10 @@ pub(super) fn parse_variable_name(input: &str) -> IResult<&str, VarAccess> {
 }
 
 // Function that tries all ops & returns the remaining input & the op that worked (if any)
-fn try_ops<'a, 'b>(
-    ops: &'b [BinaryOperator],
+fn try_ops<'a, 'b, 'c>(
+    ops: &'b [BinaryOperator<'c>],
     input: &'a str,
-) -> IResult<&'a str, &'b BinaryOperator> {
+) -> IResult<&'a str, &'b BinaryOperator<'c>> {
     for op in ops {
         let parsed: IResult<&str, &str> = ws(tag(op.op)).parse(input);
         if let Ok((remainder, _)) = parsed {
@@ -162,11 +162,11 @@ fn try_ops<'a, 'b>(
 /// ## Returns
 ///
 /// The parsed expression
-fn parse_left_assoc<'a, E: ParseError<&'a str>>(
-    mut parser: impl Parser<&'a str, Output = Exp, Error = E>,
-    ops: &[BinaryOperator],
+fn parse_left_assoc<'a, 'b, E: ParseError<&'a str>>(
+    mut parser: impl Parser<&'a str, Output = Exp<'a>, Error = E>,
+    ops: &'b [BinaryOperator<'a>],
     input: &'a str,
-) -> IResult<&'a str, Exp, E> {
+) -> IResult<&'a str, Exp<'a>, E> {
     let (mut input, mut current) = parser.parse(input)?;
 
     loop {
@@ -193,11 +193,11 @@ fn parse_left_assoc<'a, E: ParseError<&'a str>>(
 ///
 /// The parsed expression
 #[expect(dead_code)]
-fn parse_right_assoc<'a, E: ParseError<&'a str>>(
-    mut parser: impl Parser<&'a str, Output = Exp, Error = E>,
-    ops: &[BinaryOperator],
+fn parse_right_assoc<'a, 'b, E: ParseError<&'a str>>(
+    mut parser: impl Parser<&'a str, Output = Exp<'a>, Error = E>,
+    ops: &'b [BinaryOperator<'a>],
     input: &'a str,
-) -> IResult<&'a str, Exp, E> {
+) -> IResult<&'a str, Exp<'a>, E> {
     let (mut input, mut current) = parser.parse(input)?;
 
     let mut stack = Vec::new();
@@ -237,11 +237,11 @@ fn parse_right_assoc<'a, E: ParseError<&'a str>>(
 ///
 /// - If the number of operands is not 1 or 2
 /// - If the parser fails
-fn parse_non_assoc<'a, E: ParseError<&'a str> + 'a>(
-    parser: impl Parser<&'a str, Output = Exp, Error = E>,
-    op: &BinaryOperator,
+fn parse_non_assoc<'a, 'b, E: ParseError<&'a str> + 'a>(
+    parser: impl Parser<&'a str, Output = Exp<'a>, Error = E>,
+    op: &'b BinaryOperator<'a>,
     input: &'a str,
-) -> IResult<&'a str, Exp, E> {
+) -> IResult<&'a str, Exp<'a>, E> {
     let (input, mut exprs) = separated_list1(ws(tag(op.op)), parser).parse(input)?;
 
     let proc = match exprs.len() {
@@ -267,7 +267,7 @@ fn parse_non_assoc<'a, E: ParseError<&'a str> + 'a>(
 /// ## Errors
 ///
 /// - If the input string does not match the expected pattern (e.g. missing parentheses, missing quotes, etc.), a parsing error will be returned.
-fn parse_fn(input: &str) -> IResult<&str, FunctionItem> {
+fn parse_fn(input: &str) -> IResult<&str, FunctionItem<'_>> {
     let (input, (name, _, _, _, value, _, _)) = (
         map_res(take_while(|c: char| c.is_alphabetic()), |v: &str| {
             if v.is_empty() {
@@ -292,7 +292,7 @@ fn parse_fn(input: &str) -> IResult<&str, FunctionItem> {
 }
 
 /// Parse a literal value (integer, float, boolean, or string)
-fn parse_literal(input: &str) -> IResult<&str, Literal> {
+fn parse_literal(input: &str) -> IResult<&str, Literal<'_>> {
     alt((
         ws(double).map(Literal::Float),
         ws(integer).map(Literal::Int),
@@ -304,7 +304,7 @@ fn parse_literal(input: &str) -> IResult<&str, Literal> {
 }
 
 /// Parse an atomic expression
-fn parse_atom(input: &str) -> IResult<&str, Exp> {
+fn parse_atom(input: &str) -> IResult<&str, Exp<'_>> {
     alt((
         ws(parse_literal).map(Exp::literal),
         // Function call
@@ -318,7 +318,7 @@ fn parse_atom(input: &str) -> IResult<&str, Exp> {
 }
 
 /// Parse a negation (prefix unary !) operator
-fn parse_neg(input: &str) -> IResult<&str, Exp> {
+fn parse_neg(input: &str) -> IResult<&str, Exp<'_>> {
     // Try reading a negation operator
     let Ok((input, _)): IResult<&str, &str> = tag("!")(input) else {
         return parse_atom(input);
@@ -328,7 +328,7 @@ fn parse_neg(input: &str) -> IResult<&str, Exp> {
     Ok((input, Exp::neg(exp)))
 }
 
-fn parse_comp(input: &str) -> IResult<&str, Exp> {
+fn parse_comp(input: &str) -> IResult<&str, Exp<'_>> {
     parse_left_assoc(
         parse_neg,
         &[
@@ -341,23 +341,23 @@ fn parse_comp(input: &str) -> IResult<&str, Exp> {
     )
 }
 
-fn parse_neq(input: &str) -> IResult<&str, Exp> {
+fn parse_neq(input: &str) -> IResult<&str, Exp<'_>> {
     parse_non_assoc(parse_comp, &BinaryOperator::new("!=", Exp::neq), input)
 }
 
-fn parse_eq(input: &str) -> IResult<&str, Exp> {
+fn parse_eq(input: &str) -> IResult<&str, Exp<'_>> {
     parse_non_assoc(parse_neq, &BinaryOperator::new("==", Exp::eq), input)
 }
 
-fn parse_and(input: &str) -> IResult<&str, Exp> {
+fn parse_and(input: &str) -> IResult<&str, Exp<'_>> {
     parse_left_assoc(parse_eq, &[BinaryOperator::new("&&", Exp::and)], input)
 }
 
-fn parse_or(input: &str) -> IResult<&str, Exp> {
+fn parse_or(input: &str) -> IResult<&str, Exp<'_>> {
     parse_left_assoc(parse_and, &[BinaryOperator::new("||", Exp::or)], input)
 }
 
-pub(super) fn parse_exp(input: &str) -> IResult<&str, Exp> {
+pub(super) fn parse_exp(input: &str) -> IResult<&str, Exp<'_>> {
     parse_or(input)
 }
 

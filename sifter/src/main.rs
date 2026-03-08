@@ -1,16 +1,14 @@
-use std::collections::HashMap;
-
 use serde_json::json;
 use sifter::{Env, Exp};
 
 #[allow(clippy::unwrap_used)]
 fn main() {
-    let bindings = HashMap::from([
-        ("x".into(), json!(42)),
-        ("y".into(), json!("hello")),
-        ("z".into(), json!(true)),
-        (
-            "foo".into(),
+    let env = Env::new()
+        .bind("x", json!(42))
+        .bind("y", json!("hello"))
+        .bind("z", json!(true))
+        .bind(
+            "foo",
             json!({
                 "bar": 123,
                 "baz": "world",
@@ -24,14 +22,14 @@ fn main() {
                 },
                 "quux": "123"
             }),
-        ),
-    ]);
+        )
+        .build();
 
-    let exp = Exp::parse(
-        r#"length(y) < x && matches(foo.qux.nested[3], "fo{5}ur") && int(foo.quux) == foo.bar"#,
-    )
-    .unwrap();
-    let res = exp.eval(&Env::new(bindings)).unwrap();
+    let exp: Exp =
+        r#"length(y) < x && matches(foo.qux.nested[3], "fo{5}ur") && int(foo.quux) == foo.bar"#
+            .try_into()
+            .unwrap();
+    let res = exp.eval(&env).unwrap();
 
     println!("Result: {res:?}");
 }
