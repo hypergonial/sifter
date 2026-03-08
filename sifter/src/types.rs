@@ -58,6 +58,18 @@ impl Literal {
     }
 }
 
+impl Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int(i) => write!(f, "{i}"),
+            Self::Float(fl) => write!(f, "{fl}"),
+            Self::Bool(b) => write!(f, "{b}"),
+            Self::String(s) => write!(f, "{s}"),
+            Self::Null => write!(f, "null"),
+        }
+    }
+}
+
 impl<'a> From<&'a Literal> for bool {
     // Truthiness of a literal value:
     // - Integers are false if they are 0, true otherwise
