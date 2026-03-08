@@ -169,6 +169,7 @@ fn eval_eq<'a>(exp1: &'a Exp, exp2: &'a Exp, env: &Env) -> Result<Cow<'a, Litera
         (Literal::Int(i1), Literal::Int(i2)) => out(Literal::Bool(i1 == i2)),
         (Literal::String(s1), Literal::String(s2)) => out(Literal::Bool(s1 == s2)),
         (Literal::Bool(b1), Literal::Bool(b2)) => out(Literal::Bool(b1 == b2)),
+        (Literal::Null, Literal::Null) => out(Literal::Bool(true)),
         _ => out(Literal::Bool(false)),
     }
 }
