@@ -4,10 +4,17 @@ use crate::{EvalError, FnCallError};
 
 use super::types::Literal;
 
+/// A sequence of arguments passed to a function, represented as a slice of [`Literal`] values.
 pub type FnArgs<'a> = &'a [Literal<'a>];
+
+/// The result of a function call, which can either be a successful [`Literal`] value or an error if the function call fails.
 pub type FnResult<'a> = Result<Literal<'a>, FnCallError>;
+
+/// The type of a function callback, takes a slice of arguments and returns a result or an error.
 pub type FnCallback = for<'a> fn(FnArgs<'a>) -> FnResult<'a>;
 
+/// A mapping of function names to their corresponding callback implementations,
+/// used for evaluating function calls.
 pub type VTable = HashMap<&'static str, FnCallback>;
 
 /// The default function table, containing built-in functions like `length`, `startsWith`, etc.
