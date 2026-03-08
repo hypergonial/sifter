@@ -282,6 +282,7 @@ fn parse_literal(input: &str) -> IResult<&str, Literal> {
         ws(double).map(Literal::Float),
         ws(integer).map(Literal::Int),
         alt((ws(tag("true")), ws(tag("false")))).map(|v: &str| Literal::Bool(v == "true")),
+        ws(tag("null")).map(|_| Literal::Null),
         ws(string).map(Literal::String),
     ))
     .parse(input)
@@ -379,6 +380,8 @@ mod tests {
             parse_atom("'hello\\' world'    "),
             Ok(("", Exp::literal(Literal::String("hello' world".into()))))
         );
+
+        assert_eq!(parse_atom("null "), Ok(("", Exp::literal(Literal::Null))));
     }
 
     #[test]
