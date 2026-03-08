@@ -58,15 +58,19 @@ pub enum Literal<'a> {
 }
 
 impl Literal<'_> {
+    /// Convert this [`Literal`] into an owned version, where all borrowed data is cloned into owned data.
+    ///
+    /// This is useful for cases where you want to take ownership of a [`Literal`] that may contain
+    /// borrowed data (e.g. from a JSON value) and ensure that it is fully owned and independent of any original data sources.
     pub fn into_owned(self) -> Literal<'static> {
         match self {
-            Literal::Int(i) => Literal::Int(i),
-            Literal::Float(f) => Literal::Float(f),
-            Literal::Bool(b) => Literal::Bool(b),
             Literal::String(s) => Literal::String(match s {
                 Cow::Borrowed(b) => Cow::Owned(b.to_owned()),
                 Cow::Owned(o) => Cow::Owned(o),
             }),
+            Literal::Int(i) => Literal::Int(i),
+            Literal::Float(f) => Literal::Float(f),
+            Literal::Bool(b) => Literal::Bool(b),
             Literal::Null => Literal::Null,
         }
     }
@@ -210,6 +214,18 @@ pub struct VarName {
 }
 
 impl VarName {
+    /// Create a new [`VarName`] with the given name and optional index.
+    ///
+    /// # Parameters
+    ///
+    /// - `name`: The name of the variable.
+    /// - `index`: An optional index for array access,
+    ///   if this variable name is used to access an array element
+    ///   (e.g. `foo[0]` would have name "foo" and index 0).
+    ///
+    /// # Returns
+    ///
+    /// - A new [`VarName`] instance containing the provided name and index.
     pub fn new(name: impl Into<Box<str>>, index: Option<usize>) -> Self {
         Self {
             name: name.into(),
@@ -217,10 +233,12 @@ impl VarName {
         }
     }
 
+    /// The name of the variable.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// The optional index for array access, if this variable name is used to access an array element.
     pub const fn index(&self) -> Option<usize> {
         self.index
     }

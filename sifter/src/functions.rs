@@ -10,6 +10,7 @@ pub type FnCallback = for<'a> fn(FnArgs<'a>) -> FnResult<'a>;
 
 pub type VTable = HashMap<&'static str, FnCallback>;
 
+/// The default function table, containing built-in functions like `length`, `startsWith`, etc.
 pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     let it: VTable = HashMap::from([
         ("matches", matches as FnCallback),
