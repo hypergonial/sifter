@@ -20,7 +20,7 @@ pub enum Type {
     String,
     Bool,
     Float,
-    Null,
+    NullType,
 }
 
 impl Display for Type {
@@ -30,7 +30,7 @@ impl Display for Type {
             Self::String => write!(f, "string"),
             Self::Bool => write!(f, "bool"),
             Self::Float => write!(f, "float"),
-            Self::Null => write!(f, "null"),
+            Self::NullType => write!(f, "null"),
         }
     }
 }
@@ -42,6 +42,7 @@ pub enum Literal {
     Float(f64),
     Bool(bool),
     String(Arc<str>),
+    Null,
 }
 
 impl Literal {
@@ -52,6 +53,7 @@ impl Literal {
             Self::Float(_) => Type::Float,
             Self::Bool(_) => Type::Bool,
             Self::String(_) => Type::String,
+            Self::Null => Type::NullType,
         }
     }
 }
@@ -68,6 +70,7 @@ impl<'a> From<&'a Literal> for bool {
             Literal::Float(f) => *f != 0.0,
             Literal::Bool(b) => *b,
             Literal::String(s) => !s.is_empty(),
+            Literal::Null => false,
         }
     }
 }
@@ -89,6 +92,7 @@ impl<'a> TryFrom<&'a Literal> for i64 {
                 .parse()
                 .map_err(|e| format!("Failed to parse string as integer: {e}")),
             Literal::Bool(b) => Ok(Self::from(*b)),
+            Literal::Null => Err("Cannot convert null to integer".into()),
         }
     }
 }
@@ -104,6 +108,7 @@ impl<'a> TryFrom<&'a Literal> for f64 {
                 .parse()
                 .map_err(|e| format!("Failed to parse string as float: {e}")),
             Literal::Bool(b) => Ok(Self::from(*b)),
+            Literal::Null => Err("Cannot convert null to float".into()),
         }
     }
 }
@@ -115,6 +120,7 @@ impl<'a> From<&'a Literal> for Arc<str> {
             Literal::Int(i) => i.to_string().into(),
             Literal::Float(f) => f.to_string().into(),
             Literal::Bool(b) => b.to_string().into(),
+            Literal::Null => "null".into(),
         }
     }
 }
@@ -421,13 +427,12 @@ impl Exp {
     ///
     /// ## Returns
     ///
-    /// - `Ok(Some(Literal))` if the expression was successfully evaluated and resulted in a literal value.
-    /// - `Ok(None)` if the expression was successfully evaluated but resulted in a null value
+    /// - Ok(Literal) if the expression was successfully evaluated, where the `Literal` is the resulting value of the expression.
     ///
     /// ## Errors
     ///
     /// - If there was an error during evaluation, such as a type error or undefined variable, an `EvalError` will be returned.
-    pub fn eval(&self, env: &Env) -> Result<Option<Cow<'_, Literal>>, EvalError> {
+    pub fn eval(&self, env: &Env) -> Result<Cow<'_, Literal>, EvalError> {
         super::interpreter::eval(self, env)
     }
 

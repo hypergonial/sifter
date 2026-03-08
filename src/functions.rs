@@ -17,8 +17,8 @@ pub struct FnCallError {
     pub reason: Box<EvalError>,
 }
 
-pub type FnArgs<'a> = &'a [Option<Literal>];
-pub type FnResult = Result<Option<Literal>, FnCallError>;
+pub type FnArgs<'a> = &'a [Literal];
+pub type FnResult = Result<Literal, FnCallError>;
 pub type FnCallback = fn(FnArgs<'_>) -> FnResult;
 
 pub type VTable = HashMap<&'static str, FnCallback>;
@@ -55,7 +55,7 @@ fn string_unary<'a>(
     }
 
     match &args[0] {
-        Some(Literal::String(s)) => function(s),
+        Literal::String(s) => function(s),
         _ => Err(FnCallError {
             fn_name: fn_name.to_string(),
             reason: EvalError::TypeError {
@@ -83,7 +83,7 @@ fn string_binary<'a>(
     }
 
     match (&args[0], &args[1]) {
-        (Some(Literal::String(s)), Some(Literal::String(other))) => function(s, other),
+        (Literal::String(s), Literal::String(other)) => function(s, other),
         _ => Err(FnCallError {
             fn_name: fn_name.to_string(),
             reason: EvalError::TypeError {
@@ -95,24 +95,24 @@ fn string_binary<'a>(
 }
 
 fn length(args: FnArgs<'_>) -> FnResult {
-    string_unary("length", args, |s| Ok(Some(Literal::Int(s.len() as i64))))
+    string_unary("length", args, |s| Ok(Literal::Int(s.len() as i64)))
 }
 
 fn starts_with(args: FnArgs<'_>) -> FnResult {
     string_binary("startsWith", args, |s, other| {
-        Ok(Some(Literal::Bool(s.starts_with(other))))
+        Ok(Literal::Bool(s.starts_with(other)))
     })
 }
 
 fn ends_with(args: FnArgs<'_>) -> FnResult {
     string_binary("endsWith", args, |s, other| {
-        Ok(Some(Literal::Bool(s.ends_with(other))))
+        Ok(Literal::Bool(s.ends_with(other)))
     })
 }
 
 fn contains(args: FnArgs<'_>) -> FnResult {
     string_binary("contains", args, |s, other| {
-        Ok(Some(Literal::Bool(s.contains(other))))
+        Ok(Literal::Bool(s.contains(other)))
     })
 }
 
@@ -125,7 +125,7 @@ fn matches(args: FnArgs<'_>) -> FnResult {
             }
             .into(),
         })?;
-        Ok(Some(Literal::Bool(re.is_match(s))))
+        Ok(Literal::Bool(re.is_match(s)))
     })
 }
 
@@ -141,9 +141,7 @@ fn into_bool(args: FnArgs<'_>) -> FnResult {
         });
     }
 
-    Ok(Some(Literal::Bool(
-        args[0].as_ref().is_some_and(bool::from),
-    )))
+    Ok(Literal::Bool(bool::from(&args[0])))
 }
 
 fn into_string(args: FnArgs<'_>) -> FnResult {
@@ -158,9 +156,9 @@ fn into_string(args: FnArgs<'_>) -> FnResult {
         });
     }
 
-    let string: Arc<str> = args[0].as_ref().map_or_else(|| "null".into(), Into::into);
+    let string: Arc<str> = (&args[0]).into();
 
-    Ok(Some(Literal::String(string)))
+    Ok(Literal::String(string))
 }
 
 fn numeric_convert<T>(
@@ -180,27 +178,18 @@ fn numeric_convert<T>(
         });
     }
 
-    match &args[0] {
-        Some(value) => convert(value)
-            .ok_or_else(|| FnCallError {
-                fn_name: fn_name.to_string(),
-                reason: EvalError::TypeError {
-                    message: format!(
-                        "Expected a value that can be converted to {fn_name}, got {:?}",
-                        args[0]
-                    ),
-                }
-                .into(),
-            })
-            .map(|v| Some(wrap(v))),
-        None => Err(FnCallError {
+    convert(&args[0])
+        .ok_or_else(|| FnCallError {
             fn_name: fn_name.to_string(),
             reason: EvalError::TypeError {
-                message: format!("Expected a value that can be converted to {fn_name}, got null"),
+                message: format!(
+                    "Expected a value that can be converted to {fn_name}, got {:?}",
+                    args[0]
+                ),
             }
             .into(),
-        }),
-    }
+        })
+        .map(wrap)
 }
 
 fn into_int(args: FnArgs<'_>) -> FnResult {
