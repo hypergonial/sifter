@@ -754,10 +754,10 @@ impl<'a> TryFrom<&'a str> for Exp<'a> {
     }
 }
 
-impl<'a> Deserialize<'a> for Exp<'a> {
+impl<'de> Deserialize<'de> for Exp<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'a>,
+        D: serde::Deserializer<'de>,
     {
         let s = <&str>::deserialize(deserializer)?;
         Self::try_from(s).map_err(serde::de::Error::custom)
