@@ -486,6 +486,37 @@ impl<'a> Exp<'a> {
         string.into().try_into()
     }
 
+    /// Turn the expression into an owned version, where all borrowed data is cloned into owned data.
+    ///
+    /// This is useful for cases where you want to take ownership of an [`Exp`] that may contain
+    /// borrowed data (e.g. from a JSON value) and ensure that it is fully owned and independent of any original data sources.
+    ///
+    /// Note that this will recursively clone all borrowed data in the expression, so it may be expensive for large expressions with a lot of borrowed data.
+    /// However, if the expression is already fully owned, this will simply return a clone of the expression without any additional cloning of data.
+    ///
+    /// # Returns
+    ///
+    /// - An owned version of this expression, where all borrowed data has been cloned into owned data.
+    pub fn into_owned(self) -> Exp<'static> {
+        match self {
+            Exp::Literal(lit) => Exp::Literal(lit.into_owned()),
+            Exp::FnCall(func) => Exp::FnCall(FunctionItem {
+                name: func.name,
+                args: func.args.into_iter().map(Exp::into_owned).collect(),
+            }),
+            Exp::Var(var) => Exp::Var(var),
+            Exp::Neg(e) => Exp::Neg(Box::new(e.into_owned())),
+            Exp::Or(l, r) => Exp::Or(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::And(l, r) => Exp::And(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Eq(l, r) => Exp::Eq(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Neq(l, r) => Exp::Neq(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Gt(l, r) => Exp::Gt(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Lt(l, r) => Exp::Lt(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Geq(l, r) => Exp::Geq(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Leq(l, r) => Exp::Leq(Box::new(l.into_owned()), Box::new(r.into_owned())),
+        }
+    }
+
     /// Evaluate the expression in the given environment and return the resulting literal value.
     ///
     /// ## Parameters
