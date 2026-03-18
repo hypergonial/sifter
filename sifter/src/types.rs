@@ -168,6 +168,16 @@ impl<'a> From<&'a Literal<'a>> for Cow<'a, str> {
     }
 }
 
+impl<'de> Deserialize<'de> for Literal<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Self::try_from(value).map_err(serde::de::Error::custom)
+    }
+}
+
 impl TryFrom<serde_json::Value> for Literal<'_> {
     type Error = String;
 
