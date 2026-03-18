@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use nom::{
     IResult, Parser,
     branch::alt,
-    bytes::complete::{escaped, is_not, tag, take_while},
-    character::complete::{char, digit1, multispace0, one_of},
-    combinator::{map_res, opt, recognize},
+    bytes::complete::{escaped, escaped_transform, is_not, tag, take_while},
+    character::complete::{anychar, char, digit1, multispace0, one_of},
+    combinator::{map, map_res, opt, recognize, value},
     error::ParseError,
     multi::{separated_list0, separated_list1},
-    sequence::{delimited, terminated},
+    sequence::{delimited, preceded, terminated},
 };
 
 use super::types::{Exp, FunctionItem, Literal, VarAccess, VarName};
@@ -52,31 +52,80 @@ fn double(input: &str) -> IResult<&str, f64> {
     .parse(input)
 }
 
-/// Parse a quoted string, handling both single and double quotes, as well as escaped characters
-fn string<'a>(input: &'a str) -> IResult<&'a str, Cow<'a, str>> {
-    let (input, value) = alt((
-        delimited(
-            char('\''),
-            opt(escaped(is_not("\\'"), '\\', char('\''))),
-            char('\''),
+fn raw_string(input: &str) -> IResult<&str, Cow<'_, str>> {
+    alt((
+        map(
+            preceded(
+                char('r'),
+                delimited(
+                    char('\''),
+                    opt(escaped(is_not("\\'"), '\\', anychar)),
+                    char('\''),
+                ),
+            ),
+            |s: Option<&str>| Cow::Borrowed(s.unwrap_or("")),
         ),
-        delimited(
-            char('"'),
-            opt(escaped(is_not("\\\""), '\\', char('"'))),
-            char('"'),
+        map(
+            preceded(
+                char('r'),
+                delimited(
+                    char('"'),
+                    opt(escaped(is_not("\\\""), '\\', anychar)),
+                    char('"'),
+                ),
+            ),
+            |s: Option<&str>| Cow::Borrowed(s.unwrap_or("")),
         ),
     ))
-    .parse(input)?;
+    .parse(input)
+}
 
-    let value: Cow<'a, str> = match value {
-        None => Cow::from(""),
-        Some(s) if s.contains("\\'") | s.contains("\\\"") => {
-            Cow::from(s.replace("\\'", "'").replace("\\\"", "\""))
-        }
-        Some(s) => Cow::from(s), // no escapes — zero copy from input into Arc
-    };
+fn cooked_string(input: &str) -> IResult<&str, Cow<'_, str>> {
+    let single = delimited(
+        char('\''),
+        opt(escaped_transform(
+            is_not("\\'"),
+            '\\',
+            alt((
+                value("\\", char('\\')),
+                value("'", char('\'')),
+                value("\n", char('n')),
+                value("\r", char('r')),
+                value("\t", char('t')),
+                value("\0", char('0')),
+            )),
+        )),
+        char('\''),
+    );
 
-    Ok((input, value))
+    let double = delimited(
+        char('"'),
+        opt(escaped_transform(
+            is_not("\\\""),
+            '\\',
+            alt((
+                value("\\", char('\\')),
+                value("\"", char('"')),
+                value("\n", char('n')),
+                value("\r", char('r')),
+                value("\t", char('t')),
+                value("\0", char('0')),
+            )),
+        )),
+        char('"'),
+    );
+
+    alt((
+        map(single, |v| v.map_or(Cow::Borrowed(""), Cow::Owned)),
+        map(double, |v| v.map_or(Cow::Borrowed(""), Cow::Owned)),
+    ))
+    .parse(input)
+}
+
+/// Parse a quoted string, handling both single and double quotes, as well as escaped characters,
+/// with an optional "r" prefix for raw strings
+fn string(input: &str) -> IResult<&str, Cow<'_, str>> {
+    alt((raw_string, cooked_string)).parse(input)
 }
 
 /// Parse a non-keyword identifier
@@ -688,6 +737,22 @@ mod tests {
             parse_literal("\"hello \\\"world\\\"\""),
             Ok(("", Literal::String("hello \"world\"".into())))
         );
+        assert_eq!(
+            parse_literal("'hello\\nworld'"),
+            Ok(("", Literal::String("hello\nworld".into())))
+        );
+        assert_eq!(
+            parse_literal("'hello\\tworld'"),
+            Ok(("", Literal::String("hello\tworld".into())))
+        );
+        assert_eq!(
+            parse_literal("r'hello\\n\\'world'"),
+            Ok(("", Literal::String("hello\\n\\'world".into())))
+        );
+        assert_eq!(
+            parse_literal("r\"hello\\n\\\"world\""),
+            Ok(("", Literal::String("hello\\n\\\"world".into())))
+        );
     }
 
     #[test]
@@ -767,6 +832,19 @@ mod tests {
                 )),
                 Exp::literal(Literal::Int(10))
             ]
+        );
+    }
+
+    #[test]
+    fn test_fn_parser_regex() {
+        // Failed to parse matcher function: Error(Error { input: "\"[^\\.]*test.ya?ml\")", code: Char })
+        let (_, parser_function) =
+            parse_fn(r#"matches(r"[^\.]*test.ya?ml")"#).expect("Failed to parse matcher function");
+
+        assert_eq!(parser_function.name(), "matches");
+        assert_eq!(
+            parser_function.args(),
+            vec![Exp::literal(Literal::String(r"[^\.]*test.ya?ml".into()))]
         );
     }
 
