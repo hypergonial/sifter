@@ -82,7 +82,7 @@ fn string<'a>(input: &'a str) -> IResult<&'a str, Cow<'a, str>> {
 /// Parse a non-keyword identifier
 fn parse_non_keyword(input: &str) -> IResult<&str, &str> {
     map_res(
-        take_while(|c: char| c.is_ascii_alphanumeric()),
+        take_while(|c: char| c.is_ascii_alphanumeric() || c == '_'),
         |v: &str| {
             if v.is_empty() {
                 Err("Parsed empty string")
@@ -606,10 +606,13 @@ mod tests {
 
     #[test]
     fn test_variable_names() {
-        // Works
         assert_eq!(parse_exp("foo"), Ok(("", Exp::varname("foo").unwrap())));
 
-        // Works
+        assert_eq!(
+            parse_exp("foo_bar"),
+            Ok(("", Exp::varname("foo_bar").unwrap()))
+        );
+
         assert_eq!(
             parse_exp("foo||bar"),
             Ok((
