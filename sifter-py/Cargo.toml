@@ -1,20 +1,19 @@
 [package]
-name = "sifter-cli"
+name = "sifter-py"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Querying JSON data from the command line"
+description = "Python bindings for a JSON Query language"
 
 [lints]
 workspace = true
 
+[lib]
+name = "sifter_py"
+crate-type = ["cdylib"]
+
 [dependencies]
 sifter = { path = "../sifter" }
-clap = { version = "4.5", features = ["derive"] }
-serde_json = "1.0"
-
-[[bin]]
-name = "sifter"
-path = "src/main.rs"
+pyo3 = "0.28"
