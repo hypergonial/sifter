@@ -2,6 +2,8 @@ use std::{borrow::Cow, fmt::Display};
 
 use serde::Deserialize;
 
+use crate::types::jsonobj::JsonObject;
+
 /// A type of a literal value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -63,6 +65,27 @@ impl Literal<'_> {
             Literal::Float(f) => Literal::Float(f),
             Literal::Bool(b) => Literal::Bool(b),
             Literal::Null => Literal::Null,
+        }
+    }
+
+    /// Create a new [`Literal`] from a JSON value, trying to convert it to the most specific literal type possible.
+    ///
+    /// # Errors
+    ///
+    /// If the JSON value is an object or array, since these cannot be represented as literals.
+    pub fn from_json_object<V: JsonObject>(value: &V) -> Result<Literal<'_>, String> {
+        if let Some(s) = value.as_str() {
+            Ok(Literal::String(Cow::Borrowed(s)))
+        } else if let Some(i) = value.as_i64() {
+            Ok(Literal::Int(i))
+        } else if let Some(f) = value.as_f64() {
+            Ok(Literal::Float(f))
+        } else if let Some(b) = value.as_bool() {
+            Ok(Literal::Bool(b))
+        } else if value.as_null().is_some() {
+            Ok(Literal::Null)
+        } else {
+            Err("Unsupported value type".into())
         }
     }
 }
@@ -183,25 +206,6 @@ impl TryFrom<serde_json::Value> for Literal<'_> {
             }
             serde_json::Value::Number(n) => Err(format!("Unsupported number type: {n}")),
             serde_json::Value::Bool(b) => Ok(Self::Bool(b)),
-            _ => Err(format!("Unsupported value type: {value:?}")),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a serde_json::Value> for Literal<'a> {
-    type Error = String;
-
-    fn try_from(value: &'a serde_json::Value) -> Result<Self, Self::Error> {
-        match value {
-            serde_json::Value::String(s) => Ok(Self::String(Cow::Borrowed(s))),
-            serde_json::Value::Number(n) if n.is_i64() => {
-                Ok(Self::Int(n.as_i64().expect("Failed to parse integer")))
-            }
-            serde_json::Value::Number(n) if n.is_f64() => {
-                Ok(Self::Float(n.as_f64().expect("Failed to parse float")))
-            }
-            serde_json::Value::Number(n) => Err(format!("Unsupported number type: {n}")),
-            serde_json::Value::Bool(b) => Ok(Self::Bool(*b)),
             _ => Err(format!("Unsupported value type: {value:?}")),
         }
     }

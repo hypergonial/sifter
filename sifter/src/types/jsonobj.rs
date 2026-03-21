@@ -1,26 +1,132 @@
-use serde_json::{Map, Number};
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
+};
 
-pub trait JsonObject {
-    /// The underlying JSON Value type.
-    type ValueType;
+pub trait JsonMap<V: JsonObject> {
+    fn get(&self, key: &str) -> Option<&V>;
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut V>;
+
+    fn insert(&mut self, key: String, value: V) -> Option<V>;
+
+    fn contains_key(&self, key: &str) -> bool;
+
+    fn get_key_value(&self, key: &str) -> Option<(&String, &V)>;
+
+    fn remove(&mut self, key: &str) -> Option<V>;
+
+    fn remove_entry(&mut self, key: &str) -> Option<(String, V)>;
+}
+
+impl JsonMap<serde_json::Value> for serde_json::Map<String, serde_json::Value> {
+    fn get(&self, key: &str) -> Option<&serde_json::Value> {
+        self.get(key)
+    }
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut serde_json::Value> {
+        self.get_mut(key)
+    }
+
+    fn insert(&mut self, key: String, value: serde_json::Value) -> Option<serde_json::Value> {
+        self.insert(key, value)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.contains_key(key)
+    }
+
+    fn get_key_value(&self, key: &str) -> Option<(&String, &serde_json::Value)> {
+        self.get_key_value(key)
+    }
+
+    fn remove(&mut self, key: &str) -> Option<serde_json::Value> {
+        self.remove(key)
+    }
+
+    fn remove_entry(&mut self, key: &str) -> Option<(String, serde_json::Value)> {
+        self.remove_entry(key)
+    }
+}
+
+impl<V: JsonObject, S: BuildHasher> JsonMap<V> for HashMap<String, V, S> {
+    fn get(&self, key: &str) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut V> {
+        self.get_mut(key)
+    }
+
+    fn insert(&mut self, key: String, value: V) -> Option<V> {
+        self.insert(key, value)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.contains_key(key)
+    }
+
+    fn get_key_value(&self, key: &str) -> Option<(&String, &V)> {
+        self.get_key_value(key)
+    }
+
+    fn remove(&mut self, key: &str) -> Option<V> {
+        self.remove(key)
+    }
+
+    fn remove_entry(&mut self, key: &str) -> Option<(String, V)> {
+        self.remove_entry(key)
+    }
+}
+
+impl<V: JsonObject> JsonMap<V> for BTreeMap<String, V> {
+    fn get(&self, key: &str) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut V> {
+        self.get_mut(key)
+    }
+
+    fn insert(&mut self, key: String, value: V) -> Option<V> {
+        self.insert(key, value)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.contains_key(key)
+    }
+
+    fn get_key_value(&self, key: &str) -> Option<(&String, &V)> {
+        self.get_key_value(key)
+    }
+
+    fn remove(&mut self, key: &str) -> Option<V> {
+        self.remove(key)
+    }
+
+    fn remove_entry(&mut self, key: &str) -> Option<(String, V)> {
+        self.remove_entry(key)
+    }
+}
+
+pub trait JsonObject: Sized {
+    /// The type of JSON object map used by this JSON value type.
+    type MapType: JsonMap<Self>;
 
     /// Try to interpret this JSON value as an object, returning a reference to the underlying map if successful.
-    fn as_object(&self) -> Option<&Map<String, Self::ValueType>>;
+    fn as_object(&self) -> Option<&Self::MapType>;
 
     /// Try to interpret this JSON value as an object, returning a mutable reference to the underlying map if successful.
-    fn as_object_mut(&mut self) -> Option<&mut Map<String, Self::ValueType>>;
+    fn as_object_mut(&mut self) -> Option<&mut Self::MapType>;
 
     /// Try to interpret this JSON value as an array, returning a reference to the underlying vector if successful.
-    fn as_array(&self) -> Option<&Vec<Self::ValueType>>;
+    fn as_array(&self) -> Option<&Vec<Self>>;
 
     /// Try to interpret this JSON value as an array, returning a mutable reference to the underlying vector if successful.
-    fn as_array_mut(&mut self) -> Option<&mut Vec<Self::ValueType>>;
+    fn as_array_mut(&mut self) -> Option<&mut Vec<Self>>;
 
     /// Try to interpret this JSON value as a string, returning a reference to the underlying string if successful.
     fn as_str(&self) -> Option<&str>;
-
-    /// Try to interpret this JSON value as a number, returning a reference to the underlying number if successful.
-    fn as_number(&self) -> Option<&Number>;
 
     /// Try to interpret this JSON value as a boolean, returning the underlying boolean if successful.
     fn as_bool(&self) -> Option<bool>;
@@ -52,11 +158,6 @@ pub trait JsonObject {
         self.as_str().is_some()
     }
 
-    /// Return true if this JSON value is a number.
-    fn is_number(&self) -> bool {
-        self.as_number().is_some()
-    }
-
     /// Return true if this JSON value is a boolean.
     fn is_bool(&self) -> bool {
         self.as_bool().is_some()
@@ -84,30 +185,26 @@ pub trait JsonObject {
 }
 
 impl JsonObject for serde_json::Value {
-    type ValueType = Self;
+    type MapType = serde_json::Map<String, Self>;
 
-    fn as_object(&self) -> Option<&Map<String, Self::ValueType>> {
+    fn as_object(&self) -> Option<&Self::MapType> {
         self.as_object()
     }
 
-    fn as_object_mut(&mut self) -> Option<&mut Map<String, Self::ValueType>> {
+    fn as_object_mut(&mut self) -> Option<&mut Self::MapType> {
         self.as_object_mut()
     }
 
-    fn as_array(&self) -> Option<&Vec<Self::ValueType>> {
+    fn as_array(&self) -> Option<&Vec<Self>> {
         self.as_array()
     }
 
-    fn as_array_mut(&mut self) -> Option<&mut Vec<Self::ValueType>> {
+    fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
         self.as_array_mut()
     }
 
     fn as_str(&self) -> Option<&str> {
         self.as_str()
-    }
-
-    fn as_number(&self) -> Option<&Number> {
-        self.as_number()
     }
 
     fn as_bool(&self) -> Option<bool> {

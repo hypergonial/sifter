@@ -1,11 +1,15 @@
-use std::fmt::{Display, Write};
+use std::fmt::{Debug, Display, Write};
 
 use nom::Finish;
 use serde::Deserialize;
 
 use crate::{
     VarAccessError,
-    types::{env::Env, literal::Literal},
+    types::{
+        env::Env,
+        jsonobj::{JsonMap, JsonObject},
+        literal::Literal,
+    },
 };
 
 use crate::parser::parse_variable_name;
@@ -80,9 +84,9 @@ impl VarAccess {
         &self.names
     }
 
-    fn access_names<'a>(
+    fn access_names<'a, V: JsonObject + Debug>(
         mut names: &[VarName],
-        value: &'a serde_json::Value,
+        value: &'a V,
         ignore_first: bool,
     ) -> Result<Option<Literal<'a>>, VarAccessError> {
         let mut current = value;
@@ -95,7 +99,7 @@ impl VarAccess {
 
         // Reduce "current" by accessing each variable name in the access path
         for var in names {
-            if let serde_json::Value::Object(o) = current {
+            if let Some(o) = current.as_object() {
                 current = o
                     .get(var.name())
                     .ok_or_else(|| VarAccessError::VariableNotFound {
@@ -127,19 +131,18 @@ impl VarAccess {
         }
 
         match current {
-            serde_json::Value::Null => Ok(None),
-            serde_json::Value::Object(_) => Err(VarAccessError::TypeError {
+            v if v.is_null() => Ok(None),
+            v if v.is_object() => Err(VarAccessError::TypeError {
                 message: format!("Cannot use object in expression '{}'", var.name()),
             }),
-            serde_json::Value::Array(_) if var.index().is_none() => {
-                Err(VarAccessError::TypeError {
-                    message: format!("Cannot use array in expression '{}'", var.name()),
-                })
-            }
-            serde_json::Value::Array(arr) => {
+            v if v.is_array() && var.index().is_none() => Err(VarAccessError::TypeError {
+                message: format!("Cannot use array in expression '{}'", var.name()),
+            }),
+            v if v.is_array() => {
                 let index = var.index().ok_or_else(|| VarAccessError::ConversionError {
                     message: format!("Expected array index for '{}'", var.name()),
                 })?;
+                let arr = v.as_array().expect("Value should be array");
 
                 let value = arr
                     .get(index)
@@ -151,17 +154,17 @@ impl VarAccess {
                         ),
                     })?;
 
-                Literal::try_from(value)
-                    .map(Some)
-                    .map_err(|e| VarAccessError::ConversionError {
+                Literal::from_json_object(value).map(Some).map_err(|e| {
+                    VarAccessError::ConversionError {
                         message: format!("Failed to convert value at '{}': {e}", var.name()),
-                    })
+                    }
+                })
             }
-            v => Literal::try_from(v)
-                .map(Some)
-                .map_err(|e| VarAccessError::ConversionError {
+            v => Literal::from_json_object(v).map(Some).map_err(|e| {
+                VarAccessError::ConversionError {
                     message: format!("Failed to convert value at '{}': {e}", var.name()),
-                }),
+                }
+            }),
         }
     }
 
@@ -173,9 +176,9 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access<'a>(
+    pub fn access<'a, V: JsonObject + Debug>(
         &self,
-        value: &'a serde_json::Value,
+        value: &'a V,
     ) -> Result<Option<Literal<'a>>, VarAccessError> {
         Self::access_names(&self.names, value, false)
     }
@@ -188,9 +191,9 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access_from_bindings<'a>(
+    pub fn access_from_bindings<'a, V: JsonObject + Debug + Clone>(
         &self,
-        env: &'a Env<'a>,
+        env: &'a Env<'a, V>,
     ) -> Result<Option<Literal<'a>>, VarAccessError> {
         if self.names.is_empty() {
             return Ok(None);
@@ -204,7 +207,7 @@ impl VarAccess {
                     variable: first_name.to_string(),
                 })?;
 
-        Self::access_names(&self.names, value, true)
+        Self::access_names(&self.names, value.as_ref(), true)
     }
 }
 
@@ -290,7 +293,7 @@ mod tests {
     #[test]
     fn test_var_access() {
         let var_access = VarAccess::try_from("foo.bar[0].baz").unwrap();
-        let result = var_access.access(&TEST_VALUE_1).unwrap();
+        let result = var_access.access(&*TEST_VALUE_1).unwrap();
         assert_eq!(result, Some(Literal::Int(42)));
     }
 
