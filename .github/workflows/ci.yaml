@@ -17,7 +17,13 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: "Run tests"
+    name: "Run tests for ${{ matrix.crate.name }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - name: sifter
+          - name: sifter-cli
     steps:
       - name: Setup | Checkout Repository
         uses: actions/checkout@v6
@@ -29,9 +35,11 @@ jobs:
           components: rustfmt
 
       - name: Build | Compile Project
+        working-directory: ./${{ matrix.crate.name }}
         run: cargo build --verbose
 
       - name: Run | Tests
+        working-directory: ./${{ matrix.crate.name }}
         run: cargo test --verbose
 
   clippy:
