@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyResult,
-    types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods},
+    types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods, PyTypeMethods},
 };
 use sifter::{JsonObject, Literal};
 
@@ -49,9 +49,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyJsonValue {
             }
             Ok(Self::Object(map))
         } else {
-            Err(pyo3::exceptions::PyTypeError::new_err(
-                "Unsupported type for JSON conversion",
-            ))
+            Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "Unsupported type for JSON value: {}",
+                ob.get_type().name()?
+            )))
         }
     }
 }

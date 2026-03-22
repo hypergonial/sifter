@@ -11,7 +11,7 @@ description = "Python bindings for a JSON Query language"
 workspace = true
 
 [lib]
-name = "sifter_py"
+name = "sifter"
 crate-type = ["cdylib"]
 
 [dependencies]
