@@ -1,6 +1,8 @@
 use std::{borrow::Cow, fmt::Debug};
 
 use nom::Finish;
+
+#[cfg(feature = "serde")]
 use serde::Deserialize;
 
 use crate::{
@@ -315,6 +317,7 @@ impl<'a> TryFrom<&'a str> for Exp<'a> {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Exp<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

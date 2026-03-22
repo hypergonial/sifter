@@ -19,6 +19,7 @@ pub trait JsonMap<V: JsonObject> {
     fn remove_entry(&mut self, key: &str) -> Option<(String, V)>;
 }
 
+#[cfg(feature = "serde")]
 impl JsonMap<serde_json::Value> for serde_json::Map<String, serde_json::Value> {
     fn get(&self, key: &str) -> Option<&serde_json::Value> {
         self.get(key)
@@ -184,6 +185,7 @@ pub trait JsonObject: Sized {
     }
 }
 
+#[cfg(feature = "serde")]
 impl JsonObject for serde_json::Value {
     type MapType = serde_json::Map<String, Self>;
 

@@ -186,6 +186,7 @@ pub(super) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonObject + Clone + Debug>(
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[cfg(feature = "serde")]
 mod tests {
     use std::sync::LazyLock;
 

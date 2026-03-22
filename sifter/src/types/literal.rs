@@ -1,5 +1,6 @@
 use std::{borrow::Cow, fmt::Display};
 
+#[cfg(feature = "serde")]
 use serde::Deserialize;
 
 use crate::types::jsonobj::JsonObject;
@@ -182,6 +183,7 @@ impl<'a> From<&'a Literal<'a>> for Cow<'a, str> {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Literal<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -192,6 +194,7 @@ impl<'de> Deserialize<'de> for Literal<'de> {
     }
 }
 
+#[cfg(feature = "serde")]
 impl TryFrom<serde_json::Value> for Literal<'_> {
     type Error = String;
 

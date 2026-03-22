@@ -2,16 +2,30 @@ use std::{borrow::Cow, collections::HashMap, fmt::Debug};
 
 use crate::{VTable, functions::DEFAULT_VTABLE, types::jsonobj::JsonObject};
 
-/// The evaluation environment for a sifter expression, containing variable bindings and a function vtable.
-///
-/// To construct an `Env`, use `Env::new()` to create an [`EnvBuilder`], which provides a fluent interface
-/// for adding variable bindings and configuring the vtable. Once all bindings and configuration are set,
-/// call `.build()` on the [`EnvBuilder`] to create the final [`Env`] instance.
-#[derive(Debug, Clone)]
-pub struct Env<'var, V: JsonObject + Clone + Debug = serde_json::Value> {
-    bindings: HashMap<Box<str>, Cow<'var, V>>,
-    vtable: VTable,
+macro_rules! define_env {
+    () => {
+        define_env!(@impl);
+    };
+    ($default:ty) => {
+        define_env!(@impl = $default);
+    };
+    (@impl $(= $default:ty)?) => {
+        /// The evaluation environment for a sifter expression, containing variable bindings and a function vtable.
+        ///
+        /// To construct an Env, use `Env::new()` to create an [`EnvBuilder`], then call `build()`.
+        #[derive(Debug, Clone)]
+        pub struct Env<'var, V: JsonObject + Clone + Debug $(= $default)?> {
+            bindings: HashMap<Box<str>, Cow<'var, V>>,
+            vtable: VTable,
+        }
+    };
 }
+
+#[cfg(feature = "serde")]
+define_env!(serde_json::Value);
+
+#[cfg(not(feature = "serde"))]
+define_env!();
 
 impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
     /// Create a new [`EnvBuilder`] for constructing an [`Env`].

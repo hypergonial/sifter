@@ -1,6 +1,8 @@
 use std::fmt::{Debug, Display, Write};
 
 use nom::Finish;
+
+#[cfg(feature = "serde")]
 use serde::Deserialize;
 
 use crate::{
@@ -238,6 +240,7 @@ impl<'a> TryFrom<&'a str> for VarAccess {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'a> Deserialize<'a> for VarAccess {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -250,6 +253,7 @@ impl<'a> Deserialize<'a> for VarAccess {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
+#[cfg(feature = "serde")]
 mod tests {
     use std::sync::LazyLock;
 
