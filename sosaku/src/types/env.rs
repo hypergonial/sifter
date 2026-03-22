@@ -10,7 +10,7 @@ macro_rules! define_env {
         define_env!(@impl = $default);
     };
     (@impl $(= $default:ty)?) => {
-        /// The evaluation environment for a sifter expression, containing variable bindings and a function vtable.
+        /// The evaluation environment for a sosaku expression, containing variable bindings and a function vtable.
         ///
         /// To construct an Env, use `Env::new()` to create an [`EnvBuilder`], then call `build()`.
         #[derive(::std::fmt::Debug, ::std::clone::Clone)]
@@ -33,7 +33,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     /// # Example
     /// ```rust
     ///  # #[cfg(feature = "serde")] {
-    /// use sifter::Env;
+    /// use sosaku::Env;
     /// let env = Env::new()
     ///     .bind("x", serde_json::json!(42))
     ///     .bind("y", serde_json::json!("hello"))
@@ -75,7 +75,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
 /// # Example
 /// ```rust
 /// # #[cfg(feature = "serde")] {
-/// use sifter::Env;
+/// use sosaku::Env;
 /// let env = Env::new()
 ///     .bind("x", serde_json::json!(42))
 ///     .bind("y", serde_json::json!("hello"))
@@ -204,7 +204,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// Tip: You can create a custom vtable by cloning the default one and modifying it, e.g.:
     /// ```rust
-    /// use sifter::{Literal, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallError, EvalError};
+    /// use sosaku::{Literal, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallError, EvalError};
     ///
     /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
     ///     // Your function implementation goes here

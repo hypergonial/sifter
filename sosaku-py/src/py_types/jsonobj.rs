@@ -4,7 +4,7 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyResult,
     types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods, PyTypeMethods},
 };
-use sifter::{JsonValue, Literal};
+use sosaku::{JsonValue, Literal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PyJsonValue {

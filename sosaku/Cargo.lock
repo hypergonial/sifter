@@ -123,7 +123,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sifter"
+name = "sosaku"
 version = "0.1.0"
 dependencies = [
  "nom",

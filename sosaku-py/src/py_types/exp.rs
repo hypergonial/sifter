@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use pyo3::{PyResult, exceptions::PyValueError, pyclass, pymethods};
-use sifter::Exp;
+use sosaku::Exp;
 
 use crate::py_types::jsonobj::PyJsonValue;
 
@@ -46,7 +46,7 @@ impl PyExp {
     pub fn eval(&self, bindings: HashMap<String, PyJsonValue>) -> PyResult<PyJsonValue> {
         Ok(self
             .inner
-            .eval(&sifter::Env::new().bind_multiple(bindings).build())
+            .eval(&sosaku::Env::new().bind_multiple(bindings).build())
             .map_err(|e| PyValueError::new_err(e.to_string()))?
             .into_owned()
             .into())

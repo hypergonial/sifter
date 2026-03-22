@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["sifter", "sifter-cli", "sifter-py"]
+members = ["sosaku", "sosaku-cli", "sosaku-py"]
 
 [workspace.package]
 authors = ["hypergonial"]

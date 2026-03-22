@@ -313,7 +313,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sifter"
+name = "sosaku"
 version = "0.1.0"
 dependencies = [
  "nom",
@@ -324,20 +324,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "sifter-cli"
+name = "sosaku-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
  "serde_json",
- "sifter",
+ "sosaku",
 ]
 
 [[package]]
-name = "sifter-py"
+name = "sosaku-py"
 version = "0.1.0"
 dependencies = [
  "pyo3",
- "sifter",
+ "sosaku",
 ]
 
 [[package]]

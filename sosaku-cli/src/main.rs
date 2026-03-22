@@ -1,10 +1,10 @@
 use std::{fs::File, io::IsTerminal, path::PathBuf, str::FromStr};
 
 use clap::{ArgAction, Parser};
-use sifter::Exp;
+use sosaku::Exp;
 
 #[derive(Debug, Parser)]
-#[command(version, about, long_about = None, name = "sifter")]
+#[command(version, about, long_about = None, name = "sosaku")]
 struct Cli {
     exp: String,
 
@@ -112,7 +112,7 @@ fn main() {
             }
         }
     };
-    let mut env = sifter::Env::new();
+    let mut env = sosaku::Env::new();
 
     env.bind_multiple(vars_into_bindmap(args.var));
     if let Some(input) = input.as_ref() {

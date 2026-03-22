@@ -40,7 +40,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: ./sifter-py
+          working-directory: ./sosaku-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           manylinux: auto
@@ -50,7 +50,7 @@ jobs:
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           retention-days: 1
-          path: sifter-py/dist
+          path: sosaku-py/dist
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
@@ -77,7 +77,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: ./sifter-py
+          working-directory: ./sosaku-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           manylinux: musllinux_1_2
@@ -86,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
-          path: sifter-py/dist
+          path: sosaku-py/dist
           retention-days: 1
 
   windows:
@@ -116,7 +116,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: ./sifter-py
+          working-directory: ./sosaku-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
 
@@ -124,7 +124,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: sifter-py/dist
+          path: sosaku-py/dist
           retention-days: 1
 
   macos:
@@ -148,7 +148,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: ./sifter-py
+          working-directory: ./sosaku-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
 
@@ -156,7 +156,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-macos-${{ matrix.platform.target }}
-          path: sifter-py/dist
+          path: sosaku-py/dist
           retention-days: 1
 
   sdist:
@@ -168,7 +168,7 @@ jobs:
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
-          working-directory: ./sifter-py
+          working-directory: ./sosaku-py
           command: sdist
           args: --out dist
 
@@ -176,7 +176,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-sdist
-          path: sifter-py/dist
+          path: sosaku-py/dist
 
   release:
     name: Release

@@ -1,5 +1,5 @@
 [package]
-name = "sifter"
+name = "sosaku"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true

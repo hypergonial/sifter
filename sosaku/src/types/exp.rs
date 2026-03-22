@@ -12,7 +12,7 @@ use crate::{
     types::{func::FunctionItem, literal::Literal, var::VarAccess},
 };
 
-/// Represents an Abstract Syntax Tree (AST) for sifter expressions,
+/// Represents an Abstract Syntax Tree (AST) for sosaku expressions,
 /// which can be evaluated in a given environment to produce a literal value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Exp<'a> {

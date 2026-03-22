@@ -1,5 +1,5 @@
 [package]
-name = "sifter-py"
+name = "sosaku-py"
 authors.workspace = true
 version.workspace = true
 edition.workspace = true
@@ -11,9 +11,9 @@ description = "Python bindings for a JSON Query language"
 workspace = true
 
 [lib]
-name = "sifter"
+name = "sosaku"
 crate-type = ["cdylib"]
 
 [dependencies]
-sifter = { path = "../sifter" }
+sosaku = { path = "../sosaku" }
 pyo3 = "0.28"

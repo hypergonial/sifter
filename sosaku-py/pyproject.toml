@@ -3,7 +3,7 @@ requires = ["maturin>=1.12,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "sifter-py"
+name = "sosaku-py"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",

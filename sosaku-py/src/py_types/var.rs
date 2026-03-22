@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use pyo3::{PyResult, exceptions::PyValueError, pyclass, pymethods};
-use sifter::VarAccess;
+use sosaku::VarAccess;
 
 use crate::py_types::jsonobj::PyJsonValue;
 
@@ -75,7 +75,7 @@ impl PyVarAccess {
     ) -> PyResult<PyJsonValue> {
         Ok(self
             .inner
-            .access_from_bindings(&sifter::Env::new().bind_multiple(bindings).build())
+            .access_from_bindings(&sosaku::Env::new().bind_multiple(bindings).build())
             .map_err(|e| PyValueError::new_err(e.to_string()))?
             .into())
     }

@@ -1,2 +1,3 @@
-# sifter
+# sosaku
+
 DSL for filtering JSON
