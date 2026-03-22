@@ -13,16 +13,16 @@ macro_rules! define_env {
         /// The evaluation environment for a sifter expression, containing variable bindings and a function vtable.
         ///
         /// To construct an Env, use `Env::new()` to create an [`EnvBuilder`], then call `build()`.
-        #[derive(Debug, Clone)]
-        pub struct Env<'var, V: JsonObject + Clone + Debug $(= $default)?> {
-            bindings: HashMap<Box<str>, Cow<'var, V>>,
-            vtable: VTable,
+        #[derive(::std::fmt::Debug, ::std::clone::Clone)]
+        pub struct Env<'var, V: crate::types::jsonobj::JsonObject + ::std::clone::Clone + ::std::fmt::Debug $(= $default)?> {
+            bindings: ::std::collections::HashMap<::std::boxed::Box<::core::primitive::str>, ::std::borrow::Cow<'var, V>>,
+            vtable: crate::functions::VTable,
         }
     };
 }
 
 #[cfg(feature = "serde")]
-define_env!(serde_json::Value);
+define_env!(::serde_json::Value);
 
 #[cfg(not(feature = "serde"))]
 define_env!();
@@ -32,6 +32,7 @@ impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
     ///
     /// # Example
     /// ```rust
+    ///  # #[cfg(feature = "serde")] {
     /// use sifter::Env;
     /// let env = Env::new()
     ///     .bind("x", serde_json::json!(42))
@@ -40,6 +41,7 @@ impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
     ///
     /// assert_eq!(env.bindings().get("x").unwrap().as_ref(), &serde_json::json!(42));
     /// assert_eq!(env.bindings().get("y").unwrap().as_ref(), &serde_json::json!("hello"));
+    /// # }
     /// ```
     #[expect(clippy::new_ret_no_self)]
     pub fn new() -> EnvBuilder<'var, V> {
@@ -72,6 +74,7 @@ impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
 ///
 /// # Example
 /// ```rust
+/// # #[cfg(feature = "serde")] {
 /// use sifter::Env;
 /// let env = Env::new()
 ///     .bind("x", serde_json::json!(42))
@@ -80,6 +83,7 @@ impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
 ///
 /// assert_eq!(env.bindings().get("x").unwrap().as_ref(), &serde_json::json!(42));
 /// assert_eq!(env.bindings().get("y").unwrap().as_ref(), &serde_json::json!("hello"));
+/// # }
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct EnvBuilder<'var, V: JsonObject + Clone + Debug> {
@@ -218,12 +222,14 @@ impl<'var, V: JsonObject + Clone + Debug> EnvBuilder<'var, V> {
     ///     Ok(Literal::Int(42))
     /// }
     ///
+    /// # #[cfg(feature = "serde")] {
     /// let mut custom_vtable = DEFAULT_VTABLE.clone();
     /// custom_vtable.insert("my_func", my_func);
     /// let env = Env::new()
     ///    .bind("x", serde_json::json!(42))
     ///    .use_vtable(custom_vtable)
     ///    .build();
+    /// # }
     /// ```
     ///
     /// # Parameters
