@@ -5,8 +5,9 @@ use sifter::Exp;
 
 use crate::py_types::jsonobj::PyJsonValue;
 
-#[pyclass(from_py_object)]
+#[pyclass(from_py_object, eq, frozen, name = "Exp")]
 #[derive(Debug, Clone, PartialEq)]
+#[repr(transparent)]
 pub struct PyExp {
     inner: Exp<'static>,
 }
@@ -33,7 +34,7 @@ impl PyExp {
     ///
     /// # Arguments
     ///
-    /// - `env`: A mapping containing variable bindings, where keys are variable names and values are their corresponding JSON values.
+    /// - `bindings`: A mapping containing variable bindings, where keys are variable names and values are their corresponding JSON values.
     ///
     /// # Returns
     ///
@@ -42,10 +43,12 @@ impl PyExp {
     /// # Errors
     ///
     /// If there is an error during evaluation (e.g., undefined variable, type error), a `ValueError` will be raised with a message describing the evaluation error.
-    pub fn eval(&self, env: HashMap<String, PyJsonValue>) -> PyResult<PyJsonValue> {
-        let _inner_env = sifter::Env::new().bind_multiple(env).build();
-        //let res = self.inner.eval(&inner_env);
-
-        todo!()
+    pub fn eval(&self, bindings: HashMap<String, PyJsonValue>) -> PyResult<PyJsonValue> {
+        Ok(self
+            .inner
+            .eval(&sifter::Env::new().bind_multiple(bindings).build())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .into_owned()
+            .into())
     }
 }

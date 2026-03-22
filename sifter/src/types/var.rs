@@ -88,7 +88,7 @@ impl VarAccess {
         mut names: &[VarName],
         value: &'a V,
         ignore_first: bool,
-    ) -> Result<Option<Literal<'a>>, VarAccessError> {
+    ) -> Result<Literal<'a>, VarAccessError> {
         let mut current = value;
 
         let var = names.last().ok_or(VarAccessError::EmptyAccess)?;
@@ -131,7 +131,7 @@ impl VarAccess {
         }
 
         match current {
-            v if v.is_null() => Ok(None),
+            v if v.is_null() => Ok(Literal::Null),
             v if v.is_object() => Err(VarAccessError::TypeError {
                 message: format!("Cannot use object in expression '{}'", var.name()),
             }),
@@ -154,16 +154,12 @@ impl VarAccess {
                         ),
                     })?;
 
-                Literal::from_json_object(value).map(Some).map_err(|e| {
-                    VarAccessError::ConversionError {
-                        message: format!("Failed to convert value at '{}': {e}", var.name()),
-                    }
+                Literal::from_json_object(value).map_err(|e| VarAccessError::ConversionError {
+                    message: format!("Failed to convert value at '{}': {e}", var.name()),
                 })
             }
-            v => Literal::from_json_object(v).map(Some).map_err(|e| {
-                VarAccessError::ConversionError {
-                    message: format!("Failed to convert value at '{}': {e}", var.name()),
-                }
+            v => Literal::from_json_object(v).map_err(|e| VarAccessError::ConversionError {
+                message: format!("Failed to convert value at '{}': {e}", var.name()),
             }),
         }
     }
@@ -179,7 +175,7 @@ impl VarAccess {
     pub fn access<'a, V: JsonObject + Debug>(
         &self,
         value: &'a V,
-    ) -> Result<Option<Literal<'a>>, VarAccessError> {
+    ) -> Result<Literal<'a>, VarAccessError> {
         Self::access_names(&self.names, value, false)
     }
 
@@ -194,9 +190,9 @@ impl VarAccess {
     pub fn access_from_bindings<'a, V: JsonObject + Debug + Clone>(
         &self,
         env: &'a Env<'a, V>,
-    ) -> Result<Option<Literal<'a>>, VarAccessError> {
+    ) -> Result<Literal<'a>, VarAccessError> {
         if self.names.is_empty() {
-            return Ok(None);
+            return Ok(Literal::Null);
         }
 
         let first_name = self.names[0].name();
@@ -294,7 +290,7 @@ mod tests {
     fn test_var_access() {
         let var_access = VarAccess::try_from("foo.bar[0].baz").unwrap();
         let result = var_access.access(&*TEST_VALUE_1).unwrap();
-        assert_eq!(result, Some(Literal::Int(42)));
+        assert_eq!(result, Literal::Int(42));
     }
 
     #[test]
@@ -306,10 +302,10 @@ mod tests {
 
         let var_access = VarAccess::try_from("test.foo.bar[1].baz").unwrap();
         let result = var_access.access_from_bindings(&env).unwrap();
-        assert_eq!(result, Some(Literal::Int(43)));
+        assert_eq!(result, Literal::Int(43));
 
         let var_access = VarAccess::try_from("other.arr[1]").unwrap();
         let result = var_access.access_from_bindings(&env).unwrap();
-        assert_eq!(result, Some(Literal::Int(2)));
+        assert_eq!(result, Literal::Int(2));
     }
 }

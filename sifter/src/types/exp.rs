@@ -1,10 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Debug};
 
 use nom::Finish;
 use serde::Deserialize;
 
 use crate::{
-    Env,
+    Env, JsonObject,
     errors::EvalError,
     parser::parse_exp,
     types::{func::FunctionItem, literal::Literal, var::VarAccess},
@@ -28,7 +28,7 @@ pub enum Exp<'a> {
     Leq(Box<Self>, Box<Self>),
 }
 
-impl<'a> Exp<'a> {
+impl<'exp> Exp<'exp> {
     /// Create a new [`Exp`] from a string representation of an expression.
     ///
     /// # Parameters
@@ -47,7 +47,7 @@ impl<'a> Exp<'a> {
     ///   Note that semantic errors (e.g. undefined variables, type errors) are not handled by this
     ///   function and will not result in an error being returned here. Those errors will be encountered
     ///   during evaluation of the expression, and will be returned as [`EvalError`]s from the [`Exp::eval`] method.
-    pub fn new(string: impl Into<&'a str>) -> Result<Self, nom::error::Error<String>> {
+    pub fn new(string: impl Into<&'exp str>) -> Result<Self, nom::error::Error<String>> {
         string.into().try_into()
     }
 
@@ -98,10 +98,13 @@ impl<'a> Exp<'a> {
     /// ## Errors
     ///
     /// - If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
-    pub fn eval<'b, 'c>(&'a self, env: &'b Env<'b>) -> Result<Cow<'c, Literal<'c>>, EvalError>
+    pub fn eval<'var, 'out, V: JsonObject + Clone + Debug>(
+        &'exp self,
+        env: &'var Env<'var, V>,
+    ) -> Result<Cow<'out, Literal<'out>>, EvalError>
     where
-        'a: 'c,
-        'b: 'c,
+        'exp: 'out,
+        'var: 'out,
     {
         crate::interpreter::eval(self, env)
     }
@@ -116,7 +119,7 @@ impl<'a> Exp<'a> {
     ///
     /// - An [`Exp`] enum representing the literal value.
     #[inline]
-    pub const fn literal(lit: Literal<'a>) -> Self {
+    pub const fn literal(lit: Literal<'exp>) -> Self {
         Self::Literal(lit)
     }
 
@@ -162,7 +165,7 @@ impl<'a> Exp<'a> {
     ///
     /// - An [`Exp`] enum representing the function call.
     #[inline]
-    pub const fn fn_call(func: FunctionItem<'a>) -> Self {
+    pub const fn fn_call(func: FunctionItem<'exp>) -> Self {
         Self::FnCall(func)
     }
 

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug};
 
 use crate::{VTable, functions::DEFAULT_VTABLE, types::jsonobj::JsonObject};
 
@@ -8,12 +8,12 @@ use crate::{VTable, functions::DEFAULT_VTABLE, types::jsonobj::JsonObject};
 /// for adding variable bindings and configuring the vtable. Once all bindings and configuration are set,
 /// call `.build()` on the [`EnvBuilder`] to create the final [`Env`] instance.
 #[derive(Debug, Clone)]
-pub struct Env<'var, V: JsonObject + Clone = serde_json::Value> {
+pub struct Env<'var, V: JsonObject + Clone + Debug = serde_json::Value> {
     bindings: HashMap<Box<str>, Cow<'var, V>>,
     vtable: VTable,
 }
 
-impl<'var, V: JsonObject + Clone> Env<'var, V> {
+impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
     /// Create a new [`EnvBuilder`] for constructing an [`Env`].
     ///
     /// # Example
@@ -68,12 +68,12 @@ impl<'var, V: JsonObject + Clone> Env<'var, V> {
 /// assert_eq!(env.bindings().get("y").unwrap().as_ref(), &serde_json::json!("hello"));
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct EnvBuilder<'var, V: JsonObject + Clone> {
+pub struct EnvBuilder<'var, V: JsonObject + Clone + Debug> {
     bindings: HashMap<Box<str>, Cow<'var, V>>,
     vtable: Option<VTable>,
 }
 
-impl<'var, V: JsonObject + Clone> EnvBuilder<'var, V> {
+impl<'var, V: JsonObject + Clone + Debug> EnvBuilder<'var, V> {
     fn new() -> Self {
         Self {
             bindings: HashMap::new(),

@@ -4,7 +4,7 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyResult,
     types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods},
 };
-use sifter::JsonObject;
+use sifter::{JsonObject, Literal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PyJsonValue {
@@ -75,6 +75,18 @@ impl<'py> IntoPyObject<'py> for PyJsonValue {
     }
 }
 
+impl<'a> From<Literal<'a>> for PyJsonValue {
+    fn from(lit: Literal<'a>) -> Self {
+        match lit {
+            Literal::Null => Self::Null,
+            Literal::Bool(b) => Self::Bool(b),
+            Literal::Int(i) => Self::Int(i),
+            Literal::Float(f) => Self::Float(f),
+            Literal::String(s) => Self::String(s.into_owned()),
+        }
+    }
+}
+
 impl JsonObject for PyJsonValue {
     type MapType = BTreeMap<String, Self>;
 
@@ -123,6 +135,7 @@ impl JsonObject for PyJsonValue {
     fn as_u64(&self) -> Option<u64> {
         match self {
             Self::UInt(u) => Some(*u),
+            Self::Int(i) if *i >= 0 => Some(*i as u64),
             _ => None,
         }
     }
@@ -130,6 +143,7 @@ impl JsonObject for PyJsonValue {
     fn as_i64(&self) -> Option<i64> {
         match self {
             Self::Int(i) => Some(*i),
+            Self::UInt(u) if i64::try_from(*u).is_ok() => Some(*u as i64),
             _ => None,
         }
     }
@@ -137,6 +151,8 @@ impl JsonObject for PyJsonValue {
     fn as_f64(&self) -> Option<f64> {
         match self {
             Self::Float(f) => Some(*f),
+            Self::Int(i) => Some(*i as f64),
+            Self::UInt(u) => Some(*u as f64),
             _ => None,
         }
     }
