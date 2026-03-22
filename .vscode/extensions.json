@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "rust-lang.rust-analyzer",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "EditorConfig.EditorConfig",
+        "tamasfe.even-better-toml"
+    ]
+}
