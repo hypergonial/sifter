@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Debug};
 
-use crate::{VTable, functions::DEFAULT_VTABLE, types::jsonobj::JsonObject};
+use crate::{VTable, functions::DEFAULT_VTABLE, types::json::JsonValue};
 
 macro_rules! define_env {
     () => {
@@ -14,7 +14,7 @@ macro_rules! define_env {
         ///
         /// To construct an Env, use `Env::new()` to create an [`EnvBuilder`], then call `build()`.
         #[derive(::std::fmt::Debug, ::std::clone::Clone)]
-        pub struct Env<'var, V: crate::types::jsonobj::JsonObject + ::std::clone::Clone + ::std::fmt::Debug $(= $default)?> {
+        pub struct Env<'var, V: crate::types::json::JsonValue + ::std::clone::Clone + ::std::fmt::Debug $(= $default)?> {
             bindings: ::std::collections::HashMap<::std::boxed::Box<::core::primitive::str>, ::std::borrow::Cow<'var, V>>,
             vtable: crate::functions::VTable,
         }
@@ -27,7 +27,7 @@ define_env!(::serde_json::Value);
 #[cfg(not(feature = "serde"))]
 define_env!();
 
-impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
+impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     /// Create a new [`EnvBuilder`] for constructing an [`Env`].
     ///
     /// # Example
@@ -86,12 +86,12 @@ impl<'var, V: JsonObject + Clone + Debug> Env<'var, V> {
 /// # }
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct EnvBuilder<'var, V: JsonObject + Clone + Debug> {
+pub struct EnvBuilder<'var, V: JsonValue + Clone + Debug> {
     bindings: HashMap<Box<str>, Cow<'var, V>>,
     vtable: Option<VTable>,
 }
 
-impl<'var, V: JsonObject + Clone + Debug> EnvBuilder<'var, V> {
+impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     fn new() -> Self {
         Self {
             bindings: HashMap::new(),

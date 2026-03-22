@@ -6,7 +6,7 @@ use nom::Finish;
 use serde::Deserialize;
 
 use crate::{
-    Env, JsonObject,
+    Env, JsonValue,
     errors::EvalError,
     parser::parse_exp,
     types::{func::FunctionItem, literal::Literal, var::VarAccess},
@@ -100,7 +100,7 @@ impl<'exp> Exp<'exp> {
     /// ## Errors
     ///
     /// - If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
-    pub fn eval<'var, 'out, V: JsonObject + Clone + Debug>(
+    pub fn eval<'var, 'out, V: JsonValue + Clone + Debug>(
         &'exp self,
         env: &'var Env<'var, V>,
     ) -> Result<Cow<'out, Literal<'out>>, EvalError>

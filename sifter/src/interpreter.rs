@@ -1,7 +1,7 @@
 use std::{borrow::Cow, fmt::Debug};
 
 use crate::{
-    JsonObject,
+    JsonValue,
     errors::EvalError,
     types::{Env, FunctionItem, VarAccess},
 };
@@ -44,7 +44,7 @@ const fn out(literal: Literal<'_>) -> Result<Cow<'_, Literal<'_>>, EvalError> {
     Ok(Cow::Owned(literal))
 }
 
-fn eval_neg<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_neg<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp: &'a Exp<'a>,
     env: &'b Env<'b, V>,
 ) -> Result<Cow<'c, Literal<'c>>, EvalError> {
@@ -52,7 +52,7 @@ fn eval_neg<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
     out(Literal::Bool(!value))
 }
 
-fn eval_and<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_and<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
@@ -66,7 +66,7 @@ fn eval_and<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
     }
 }
 
-fn eval_or<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_or<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
@@ -80,7 +80,7 @@ fn eval_or<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
     }
 }
 
-fn eval_eq<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_eq<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp,
     exp2: &'a Exp,
     env: &'b Env<'b, V>,
@@ -91,7 +91,7 @@ fn eval_eq<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
     Ok(Cow::Owned(Literal::Bool(value1 == value2)))
 }
 
-fn eval_neq<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_neq<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
@@ -100,7 +100,7 @@ fn eval_neq<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
     out(Literal::Bool(!res))
 }
 
-fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
@@ -132,7 +132,7 @@ fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
     }
 }
 
-fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
+fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     var: &'a VarAccess,
     env: &'b Env<'b, V>,
 ) -> Result<Cow<'c, Literal<'c>>, EvalError> {
@@ -141,7 +141,7 @@ fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonObject + Clone + Debug>(
         .map(Cow::Owned::<Literal<'c>>)
 }
 
-fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonObject + Clone + Debug>(
+fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     function: &'exp FunctionItem<'exp>,
     env: &'var Env<'var, V>,
 ) -> Result<Cow<'out, Literal<'out>>, EvalError> {
@@ -164,7 +164,7 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonObject + Clone + Debug>(
         .map(|l| Cow::Owned(l.into_owned()))
 }
 
-pub(super) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonObject + Clone + Debug>(
+pub(super) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     exp: &'exp Exp,
     env: &'var Env<'var, V>,
 ) -> Result<Cow<'out, Literal<'out>>, EvalError> {

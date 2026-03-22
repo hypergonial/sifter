@@ -3,7 +3,8 @@ use std::{
     hash::BuildHasher,
 };
 
-pub trait JsonMap<V: JsonObject> {
+/// A trait representing a JSON object map, which is a mapping from string keys to JSON values.
+pub trait JsonMap<V: JsonValue> {
     fn get(&self, key: &str) -> Option<&V>;
 
     fn get_mut(&mut self, key: &str) -> Option<&mut V>;
@@ -50,7 +51,7 @@ impl JsonMap<serde_json::Value> for serde_json::Map<String, serde_json::Value> {
     }
 }
 
-impl<V: JsonObject, S: BuildHasher> JsonMap<V> for HashMap<String, V, S> {
+impl<V: JsonValue, S: BuildHasher> JsonMap<V> for HashMap<String, V, S> {
     fn get(&self, key: &str) -> Option<&V> {
         self.get(key)
     }
@@ -80,7 +81,7 @@ impl<V: JsonObject, S: BuildHasher> JsonMap<V> for HashMap<String, V, S> {
     }
 }
 
-impl<V: JsonObject> JsonMap<V> for BTreeMap<String, V> {
+impl<V: JsonValue> JsonMap<V> for BTreeMap<String, V> {
     fn get(&self, key: &str) -> Option<&V> {
         self.get(key)
     }
@@ -110,7 +111,8 @@ impl<V: JsonObject> JsonMap<V> for BTreeMap<String, V> {
     }
 }
 
-pub trait JsonObject: Sized {
+/// A trait representing a JSON value, which can be one of several types (object, array, string, number, boolean, or null).
+pub trait JsonValue: Sized {
     /// The type of JSON object map used by this JSON value type.
     type MapType: JsonMap<Self>;
 
@@ -186,7 +188,7 @@ pub trait JsonObject: Sized {
 }
 
 #[cfg(feature = "serde")]
-impl JsonObject for serde_json::Value {
+impl JsonValue for serde_json::Value {
     type MapType = serde_json::Map<String, Self>;
 
     fn as_object(&self) -> Option<&Self::MapType> {

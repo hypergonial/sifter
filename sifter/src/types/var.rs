@@ -9,7 +9,7 @@ use crate::{
     VarAccessError,
     types::{
         env::Env,
-        jsonobj::{JsonMap, JsonObject},
+        json::{JsonMap, JsonValue},
         literal::Literal,
     },
 };
@@ -86,7 +86,7 @@ impl VarAccess {
         &self.names
     }
 
-    fn access_names<'a, V: JsonObject + Debug>(
+    fn access_names<'a, V: JsonValue + Debug>(
         mut names: &[VarName],
         value: &'a V,
         ignore_first: bool,
@@ -174,7 +174,7 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access<'a, V: JsonObject + Debug>(
+    pub fn access<'a, V: JsonValue + Debug>(
         &self,
         value: &'a V,
     ) -> Result<Literal<'a>, VarAccessError> {
@@ -189,7 +189,7 @@ impl VarAccess {
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access_from_bindings<'a, V: JsonObject + Debug + Clone>(
+    pub fn access_from_bindings<'a, V: JsonValue + Debug + Clone>(
         &self,
         env: &'a Env<'a, V>,
     ) -> Result<Literal<'a>, VarAccessError> {

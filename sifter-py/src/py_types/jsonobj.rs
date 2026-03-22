@@ -4,7 +4,7 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyResult,
     types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods, PyTypeMethods},
 };
-use sifter::{JsonObject, Literal};
+use sifter::{JsonValue, Literal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PyJsonValue {
@@ -88,7 +88,7 @@ impl<'a> From<Literal<'a>> for PyJsonValue {
     }
 }
 
-impl JsonObject for PyJsonValue {
+impl JsonValue for PyJsonValue {
     type MapType = BTreeMap<String, Self>;
 
     fn as_object(&self) -> Option<&Self::MapType> {

@@ -3,7 +3,7 @@ use std::{borrow::Cow, fmt::Display};
 #[cfg(feature = "serde")]
 use serde::Deserialize;
 
-use crate::types::jsonobj::JsonObject;
+use crate::types::json::JsonValue;
 
 /// A type of a literal value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,7 +74,7 @@ impl Literal<'_> {
     /// # Errors
     ///
     /// If the JSON value is an object or array, since these cannot be represented as literals.
-    pub fn from_json_object<V: JsonObject>(value: &V) -> Result<Literal<'_>, String> {
+    pub fn from_json_object<V: JsonValue>(value: &V) -> Result<Literal<'_>, String> {
         if let Some(s) = value.as_str() {
             Ok(Literal::String(Cow::Borrowed(s)))
         } else if let Some(i) = value.as_i64() {
