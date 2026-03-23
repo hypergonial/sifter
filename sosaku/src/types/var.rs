@@ -100,9 +100,8 @@ impl VarName {
             arr.get(index)
                 .ok_or_else(|| VarAccessError::IndexOutOfBounds {
                     message: format!(
-                        "Index out of bounds at '{}[{}]' (index: {index}, length: {})",
+                        "Index out of bounds at '{}' (index: {index}, length: {})",
                         resolve_obj_name(),
-                        index,
                         arr.len()
                     ),
                 })
