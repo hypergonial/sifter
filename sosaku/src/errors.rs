@@ -46,7 +46,7 @@ pub enum EvalError {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum Error {
     #[error(transparent)]
-    Eval(EvalError),
-    #[error("Parse error: {0}")]
+    Eval(#[from] EvalError),
+    #[error("Parse Error: {0}")]
     Parse(#[from] ParseError),
 }
