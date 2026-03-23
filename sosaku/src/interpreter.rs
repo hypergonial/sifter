@@ -214,7 +214,6 @@ pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-#[cfg(feature = "serde")]
 mod tests {
     use std::sync::LazyLock;
 
@@ -222,24 +221,24 @@ mod tests {
 
     use super::*;
 
-    static ENV: LazyLock<Env> = LazyLock::new(|| {
+    static ENV: LazyLock<Env<Value>> = LazyLock::new(|| {
         Env::new()
-            .bind("x", serde_json::json!(42))
-            .bind("y", serde_json::json!("hello"))
-            .bind("z", serde_json::json!(true))
+            .bind("x", Value::Int(42))
+            .bind("y", Value::String("hello".into()))
+            .bind("z", Value::Bool(true))
             .bind(
                 "foo",
-                serde_json::json!({
-                    "bar": 123,
-                    "baz": "world",
-                    "qux": {
-                        "nested": [
-                            1,
-                            2,
-                            3
-                        ]
-                    }
-                }),
+                Value::Object(BTreeMap::from([
+                    ("bar".to_string(), Value::Int(123)),
+                    ("baz".to_string(), Value::String("world".into())),
+                    (
+                        "qux".to_string(),
+                        Value::Object(BTreeMap::from([(
+                            "nested".to_string(),
+                            Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+                        )])),
+                    ),
+                ])),
             )
             .build()
     });
@@ -342,7 +341,7 @@ mod tests {
                 Err(EvalError::FnCallError(FnCallError {
                     fn_name: "len".to_string(),
                     reason: EvalError::TypeError {
-                        message: "Expected a string, array, or object".to_string(),
+                        message: "Expected a string, array, or object, got: 'int'".to_string(),
                     }
                     .into(),
                 })),

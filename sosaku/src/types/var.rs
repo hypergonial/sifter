@@ -54,6 +54,72 @@ impl VarName {
     pub const fn index(&self) -> Option<usize> {
         self.index
     }
+
+    fn access<'a, V: JsonValue + Debug>(
+        &self,
+        value: &'a V,
+        resolve_obj_name: impl Fn() -> String,
+    ) -> Result<&'a V, VarAccessError> {
+        // Map into the object with the name
+        if let Some(o) = value.as_object() {
+            let out = o
+                .get(self.name())
+                .ok_or_else(|| VarAccessError::ObjectKeyError {
+                    object: resolve_obj_name(),
+                    key: self.name().to_string(),
+                })?;
+            // If we have an index, index into the array
+            if self.index().is_some() {
+                self.index_into(out, resolve_obj_name)
+            } else {
+                Ok(out)
+            }
+        } else {
+            // Trying to varaccess into a non-object value is always an error
+            Err(VarAccessError::ObjectKeyError {
+                object: resolve_obj_name(),
+                key: self.name().to_string(),
+            })
+        }
+    }
+
+    fn index_into<'a, V: JsonValue + Debug>(
+        &self,
+        value: &'a V,
+        resolve_obj_name: impl Fn() -> String,
+    ) -> Result<&'a V, VarAccessError> {
+        if let Some(index) = self.index() {
+            let arr = value.as_array().ok_or_else(|| VarAccessError::TypeError {
+                message: format!(
+                    "Expected array at '{}', found {:?}",
+                    resolve_obj_name(),
+                    value
+                ),
+            })?;
+
+            arr.get(index)
+                .ok_or_else(|| VarAccessError::IndexOutOfBounds {
+                    message: format!(
+                        "Index out of bounds at '{}[{}]' (index: {index}, length: {})",
+                        resolve_obj_name(),
+                        index,
+                        arr.len()
+                    ),
+                })
+        } else {
+            panic!("Called index_into on VarName without an index")
+        }
+    }
+}
+
+impl Display for VarName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)?;
+        if let Some(index) = self.index {
+            write!(f, "[{index}]")?;
+        }
+        Ok(())
+    }
 }
 
 /// A variable access, which is a series of variable names.
@@ -93,29 +159,30 @@ impl VarAccess {
         value: &'a V,
         ignore_first: bool,
     ) -> Result<&'a V, VarAccessError> {
-        let mut current = value;
-        let mut root = None;
-
-        if ignore_first {
-            root = names.first().map_or_else(|| None, |v| Some(v.name()));
+        // (curr_value, curr_name), root_name)
+        let (mut current, root) = if ignore_first {
+            let root = names
+                .first()
+                .expect("Variable access must have at least one name");
             names = names.get(1..).ok_or(VarAccessError::EmptyAccess)?;
-        }
+            ((value, root), Some(root))
+        } else {
+            let val = names
+                .first()
+                .expect("Variable access must have at least one name");
+            ((value, val), None)
+        };
 
         // Join the previous variable names to indicate the
         // path to the current object being accessed, for better error messages
-        let resolve_obj_name = |i: usize| {
+        let resolve_name_until = |i: usize| {
             if i == 0 {
-                root.unwrap_or("<root>").to_string()
+                #[expect(clippy::or_fun_call)]
+                root.unwrap_or(&VarName::new("<root>", None)).to_string()
             } else {
                 let names = names[..i]
                     .iter()
-                    .map(|v| {
-                        if let Some(index) = v.index() {
-                            format!("{}[{}]", v.name(), index)
-                        } else {
-                            v.name().to_string()
-                        }
-                    })
+                    .map(ToString::to_string)
                     .collect::<Vec<_>>();
 
                 if let Some(r) = root {
@@ -128,48 +195,18 @@ impl VarAccess {
 
         // Reduce "current" by accessing each variable name in the access path
         for (i, var) in names.iter().enumerate() {
-            if let Some(o) = current.as_object() {
-                current = o
-                    .get(var.name())
-                    .ok_or_else(|| VarAccessError::ObjectKeyError {
-                        object: resolve_obj_name(i),
-                        key: var.name().to_string(),
-                    })?;
-
-                if let Some(index) = var.index() {
-                    let arr = current
-                        .as_array()
-                        .ok_or_else(|| VarAccessError::TypeError {
-                            message: format!(
-                                "Expected array at '{}', found {:?}",
-                                resolve_obj_name(i),
-                                current
-                            ),
-                        })?;
-
-                    current = arr
-                        .get(index)
-                        .ok_or_else(|| VarAccessError::IndexOutOfBounds {
-                            message: format!(
-                                "Index out of bounds at '{}' (index: {index} length: {})",
-                                resolve_obj_name(i),
-                                arr.len()
-                            ),
-                        })?;
-                }
-            } else {
-                return Err(VarAccessError::TypeError {
-                    message: format!(
-                        "Expected object at '{}', found {:?}, cannot access '{}'",
-                        resolve_obj_name(i),
-                        current,
-                        var.name()
-                    ),
-                });
-            }
+            current = (var.access(current.0, || resolve_name_until(i))?, var);
         }
 
-        Ok(current)
+        // Account for edge-case where if ignore_first is true and the first variable name has an index,
+        // we need to access that index in the root value
+        if names.is_empty() && ignore_first && current.1.index().is_some() {
+            current.0 = current
+                .1
+                .index_into(current.0, || resolve_name_until(names.len()))?;
+        }
+
+        Ok(current.0)
     }
 
     /// Access the value denoted by this accessor from the given JSON value.
@@ -214,17 +251,13 @@ impl VarAccess {
 
 impl Display for VarAccess {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut result = String::new();
-        for var in &self.names {
-            result.push_str(var.name());
-            if let Some(index) = var.index() {
-                write!(result, "[{index}]").expect("Failed to write index");
+        for (i, name) in self.names.iter().enumerate() {
+            if i > 0 {
+                f.write_char('.')?;
             }
-            result.push('.');
+            write!(f, "{name}")?;
         }
-        // Remove the trailing dot
-        result.pop();
-        write!(f, "{result}")
+        Ok(())
     }
 }
 
@@ -303,6 +336,13 @@ mod tests {
     }
 
     #[test]
+    fn test_var_access_root_index() {
+        let var_access = VarAccess::try_from("arr[1]").unwrap();
+        let result = var_access.access(&*TEST_VALUE_2).unwrap();
+        assert_eq!(*result, json!(2));
+    }
+
+    #[test]
     fn test_var_access_array() {
         let var_access = VarAccess::try_from("foo.bar").unwrap();
         let result = var_access.access(&*TEST_VALUE_1).unwrap();
@@ -361,6 +401,10 @@ mod tests {
         assert!(matches!(result, Err(VarAccessError::ObjectKeyError { .. })));
 
         let var_access = VarAccess::try_from("foo.bar[0].baz.qux").unwrap();
+        let result = var_access.access(&*TEST_VALUE_1);
+        assert!(matches!(result, Err(VarAccessError::ObjectKeyError { .. })));
+
+        let var_access = VarAccess::try_from("foo[0]").unwrap();
         let result = var_access.access(&*TEST_VALUE_1);
         assert!(matches!(result, Err(VarAccessError::TypeError { .. })));
     }
