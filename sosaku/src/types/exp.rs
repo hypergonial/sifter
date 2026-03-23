@@ -6,7 +6,7 @@ use nom::Finish;
 use serde::Deserialize;
 
 use crate::{
-    Env, JsonValue,
+    Env, JsonValue, ParseError,
     errors::EvalError,
     parser::parse_exp,
     types::{func::FunctionItem, literal::Literal, var::VarAccess},
@@ -49,7 +49,7 @@ impl<'exp> Exp<'exp> {
     ///   Note that semantic errors (e.g. undefined variables, type errors) are not handled by this
     ///   function and will not result in an error being returned here. Those errors will be encountered
     ///   during evaluation of the expression, and will be returned as [`EvalError`]s from the [`Exp::eval`] method.
-    pub fn new(string: impl Into<&'exp str>) -> Result<Self, nom::error::Error<String>> {
+    pub fn new(string: impl Into<&'exp str>) -> Result<Self, ParseError> {
         string.into().try_into()
     }
 

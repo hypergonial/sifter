@@ -1,5 +1,8 @@
 use thiserror::Error;
 
+pub use nom::error::Error as NomError;
+pub type ParseError = NomError<String>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("Error calling function '{fn_name}': {reason}")]
 pub struct FnCallError {
@@ -38,4 +41,12 @@ pub enum EvalError {
     RegexError { message: String },
     #[error("Argument Error: Expected {expected} arguments, but got {got}")]
     ArgumentCount { expected: usize, got: usize },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum Error {
+    #[error(transparent)]
+    Eval(EvalError),
+    #[error("Parse error: {0}")]
+    Parse(#[from] ParseError),
 }
