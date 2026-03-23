@@ -45,6 +45,18 @@ impl Display for Type {
 }
 
 /// A literal value that can be used in expressions.
+///
+/// This type represents the various literal values that can be used in expressions,
+/// such as integers, strings, booleans, floats, arrays, objects, and null.
+///
+/// It is designed to be flexible and can contain borrowed references
+/// to data (e.g. from JSON values) or owned data.
+///
+/// The lifetime parameter `'a` is used for borrowing data from either bindings or the expression itself,
+/// which allows for efficient handling of JSON values without unnecessary cloning.
+///
+/// To obtain a fully owned version of a [`Value`], you can use the [`Value::into_owned`] method,
+/// which will clone any borrowed data into owned data and return a new [`Value`] with a `'static` lifetime.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a> {
     /// An integer value (base 10, signed 64-bit integer).
@@ -328,7 +340,21 @@ impl TryFrom<serde_json::Value> for Value<'_> {
             }
             serde_json::Value::Number(n) => Err(format!("Unsupported number type: {n}")),
             serde_json::Value::Bool(b) => Ok(Self::Bool(b)),
-            _ => Err(format!("Unsupported value type: {value:?}")),
+            serde_json::Value::Null => Ok(Self::Null),
+            serde_json::Value::Array(arr) => Ok(Self::Array(
+                arr.into_iter()
+                    .map(Self::try_from)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            serde_json::Value::Object(obj) => {
+                let new = obj
+                    .into_iter()
+                    .map(|(k, v)| (k, Self::try_from(v)))
+                    .map(|(k, rv)| rv.map(|v| (k, v)))
+                    .collect::<Result<BTreeMap<_, _>, _>>()?;
+
+                Ok(Self::Object(new))
+            }
         }
     }
 }
