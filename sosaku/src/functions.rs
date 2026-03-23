@@ -151,7 +151,7 @@ fn into_string<'a>(args: FnArgs<'a>) -> FnResult<'a> {
         });
     }
 
-    let string: Cow<'a, str> = (&args[0]).into();
+    let string: Cow<'a, str> = args[0].to_string().into();
 
     Ok(Value::String(string))
 }

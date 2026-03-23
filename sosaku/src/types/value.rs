@@ -1,13 +1,13 @@
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    fmt::{Debug, Display, Write},
+    fmt::{Debug, Display},
 };
 
 #[cfg(feature = "serde")]
 use serde::Deserialize;
 
-use crate::{JsonMap, types::json::JsonValue};
+use crate::{JsonMap, types::json::JsonValue, utils::escape_str_for_json};
 
 /// A type of a literal value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -215,7 +215,11 @@ impl Display for Value<'_> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{item}")?;
+                    if let Self::String(s) = item {
+                        write!(f, "\"{}\"", escape_str_for_json(s))?;
+                    } else {
+                        write!(f, "{item}")?;
+                    }
                 }
                 write!(f, "]")
             }
@@ -225,7 +229,11 @@ impl Display for Value<'_> {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{k}: {v}")?;
+                    if let Self::String(s) = v {
+                        write!(f, "\"{k}\": \"{}\"", escape_str_for_json(s))?;
+                    } else {
+                        write!(f, "\"{k}\": {v}")?;
+                    }
                 }
                 write!(f, "}}")
             }
@@ -290,40 +298,6 @@ impl<'a> TryFrom<&'a Value<'a>> for f64 {
             Value::Null => Err("Cannot convert null to float".into()),
             Value::Array(_) => Err("Cannot convert array to float".into()),
             Value::Object(_) => Err("Cannot convert object to float".into()),
-        }
-    }
-}
-
-impl<'a> From<&'a Value<'a>> for Cow<'a, str> {
-    fn from(value: &'a Value<'a>) -> Self {
-        match value {
-            Value::String(s) => s.clone(),
-            Value::Int(i) => i.to_string().into(),
-            Value::Float(f) => f.to_string().into(),
-            Value::Bool(b) => b.to_string().into(),
-            Value::Null => "null".into(),
-            Value::Array(arr) => {
-                let mut s = String::from("[");
-                for (i, item) in arr.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
-                    }
-                    s.push_str(&item.to_string());
-                }
-                s.push(']');
-                s.into()
-            }
-            Value::Object(obj) => {
-                let mut s = String::from("{");
-                for (i, (k, v)) in obj.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
-                    }
-                    let _ = write!(s, "{k}: {v}");
-                }
-                s.push('}');
-                s.into()
-            }
         }
     }
 }

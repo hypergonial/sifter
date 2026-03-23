@@ -3,6 +3,7 @@ pub mod functions;
 pub mod interpreter;
 pub mod parser;
 pub mod types;
+pub mod utils;
 
 pub use errors::{Error, EvalError, FnCallError, NomError, ParseError, VarAccessError};
 pub use functions::{DEFAULT_VTABLE, FnArgs, FnCallback, FnResult, VTable};
