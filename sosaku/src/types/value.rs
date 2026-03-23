@@ -315,6 +315,25 @@ impl<'a> TryFrom<&'a Value<'a>> for f64 {
     }
 }
 
+impl FromIterator<Self> for Value<'_> {
+    fn from_iter<T: IntoIterator<Item = Self>>(iter: T) -> Self {
+        Self::Array(iter.into_iter().collect())
+    }
+}
+
+impl<K> FromIterator<(K, Self)> for Value<'_>
+where
+    K: Into<String>,
+{
+    fn from_iter<T: IntoIterator<Item = (K, Self)>>(iter: T) -> Self {
+        Self::Object(
+            iter.into_iter()
+                .map(|(k, v)| (k.into(), v))
+                .collect::<BTreeMap<String, Value<'_>>>(),
+        )
+    }
+}
+
 #[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Value<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

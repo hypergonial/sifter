@@ -14,7 +14,7 @@ macro_rules! define_env {
         ///
         /// To construct an Env, use `Env::new()` to create an [`EnvBuilder`], then call `build()`.
         #[derive(::std::fmt::Debug, ::std::clone::Clone)]
-        pub struct Env<'var, V: crate::types::json::JsonValue + ::std::clone::Clone + ::std::fmt::Debug $(= $default)?> {
+        pub struct Env<'var, V: crate::types::json::JsonValue + ::std::clone::Clone + ::std::fmt::Debug $(=$default)?> {
             bindings: ::std::collections::HashMap<::std::boxed::Box<::core::primitive::str>, ::std::borrow::Cow<'var, V>>,
             vtable: crate::functions::VTable,
         }
@@ -33,6 +33,8 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     /// # Example
     /// ```rust
     ///  # #[cfg(feature = "serde")] {
+    /// // Note: The `serde` feature must be enabled to use
+    /// // `serde_json::Value` as the JSON value type.
     /// use sosaku::Env;
     /// let env = Env::new()
     ///     .bind("x", serde_json::json!(42))
@@ -75,6 +77,8 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
 /// # Example
 /// ```rust
 /// # #[cfg(feature = "serde")] {
+/// // Note: The `serde` feature must be enabled to use
+/// // `serde_json::Value` as the JSON value type.
 /// use sosaku::Env;
 /// let env = Env::new()
 ///     .bind("x", serde_json::json!(42))
@@ -204,7 +208,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// Tip: You can create a custom vtable by cloning the default one and modifying it, e.g.:
     /// ```rust
-    /// use sosaku::{Literal, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallError, EvalError};
+    /// use sosaku::{Value, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallError, EvalError};
     ///
     /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
     ///     // Your function implementation goes here
@@ -219,7 +223,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///         });
     ///     }
     ///
-    ///     Ok(Literal::Int(42))
+    ///     Ok(Value::Int(42))
     /// }
     ///
     /// # #[cfg(feature = "serde")] {

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Debug};
+use std::{borrow::Cow, collections::BTreeMap, fmt::Debug};
 
 use nom::Finish;
 
@@ -28,6 +28,8 @@ pub enum Exp<'a> {
     Lt(Box<Self>, Box<Self>),
     Geq(Box<Self>, Box<Self>),
     Leq(Box<Self>, Box<Self>),
+    Array(Vec<Self>),
+    Object(BTreeMap<String, Self>),
 }
 
 impl<'exp> Exp<'exp> {
@@ -84,6 +86,10 @@ impl<'exp> Exp<'exp> {
             Exp::Lt(l, r) => Exp::Lt(Box::new(l.into_owned()), Box::new(r.into_owned())),
             Exp::Geq(l, r) => Exp::Geq(Box::new(l.into_owned()), Box::new(r.into_owned())),
             Exp::Leq(l, r) => Exp::Leq(Box::new(l.into_owned()), Box::new(r.into_owned())),
+            Exp::Array(elems) => Exp::Array(elems.into_iter().map(Exp::into_owned).collect()),
+            Exp::Object(map) => {
+                Exp::Object(map.into_iter().map(|(k, v)| (k, v.into_owned())).collect())
+            }
         }
     }
 
@@ -155,6 +161,35 @@ impl<'exp> Exp<'exp> {
     #[inline]
     pub fn varname(accessor: &str) -> Result<Self, nom::error::Error<&str>> {
         VarAccess::try_from(accessor).map(Self::var)
+    }
+
+    /// Create a new [`Exp`] representing an array literal.
+    ///
+    /// ## Parameters
+    ///
+    /// - `elems`: The elements of the array, represented as a vector of [`Exp`] expressions.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the array literal.
+    #[inline]
+    pub const fn array(elems: Vec<Self>) -> Self {
+        Self::Array(elems)
+    }
+
+    /// Create a new [`Exp`] representing an object literal.
+    ///
+    /// ## Parameters
+    ///
+    /// - `map`: The key-value pairs of the object, represented as a `BTreeMap`
+    ///   where the key is a string and the value is an [`Exp`] expression.
+    ///
+    /// ## Returns
+    ///
+    /// - An [`Exp`] enum representing the object literal.
+    #[inline]
+    pub const fn object(map: BTreeMap<String, Self>) -> Self {
+        Self::Object(map)
     }
 
     /// Create a new [`Exp`] representing a function call.

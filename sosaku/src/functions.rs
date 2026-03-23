@@ -21,7 +21,7 @@ pub type VTable = HashMap<&'static str, FnCallback>;
 pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     let it: VTable = HashMap::from([
         ("matches", matches as FnCallback),
-        ("length", length),
+        ("len", len),
         ("startsWith", starts_with),
         ("endsWith", ends_with),
         ("contains", contains),
@@ -33,10 +33,10 @@ pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     it
 });
 
-fn string_unary<'a>(
+fn unary<'a>(
     fn_name: &'static str,
     args: FnArgs<'a>,
-    function: impl Fn(&'a str) -> FnResult<'a>,
+    function: impl Fn(&Value<'a>) -> FnResult<'a>,
 ) -> FnResult<'a> {
     if args.len() != 1 {
         return Err(FnCallError {
@@ -49,22 +49,13 @@ fn string_unary<'a>(
         });
     }
 
-    match &args[0] {
-        Value::String(s) => function(s),
-        _ => Err(FnCallError {
-            fn_name: fn_name.to_string(),
-            reason: EvalError::TypeError {
-                message: "Expected a string".to_string(),
-            }
-            .into(),
-        }),
-    }
+    function(&args[0])
 }
 
-fn string_binary<'a>(
+fn binary<'a>(
     fn_name: &'static str,
     args: FnArgs<'a>,
-    function: impl Fn(&'a str, &'a str) -> FnResult<'a>,
+    function: impl Fn(&Value<'a>, &Value<'a>) -> FnResult<'a>,
 ) -> FnResult<'a> {
     if args.len() != 2 {
         return Err(FnCallError {
@@ -77,20 +68,56 @@ fn string_binary<'a>(
         });
     }
 
-    match (&args[0], &args[1]) {
-        (Value::String(s), Value::String(other)) => function(s, other),
-        _ => Err(FnCallError {
-            fn_name: fn_name.to_string(),
-            reason: EvalError::TypeError {
-                message: "Expected two strings".to_string(),
-            }
-            .into(),
-        }),
-    }
+    function(&args[0], &args[1])
 }
 
-fn length(args: FnArgs<'_>) -> FnResult<'_> {
-    string_unary("length", args, |s| Ok(Value::Int(s.len() as i64)))
+fn string_binary<'a>(
+    fn_name: &'static str,
+    args: FnArgs<'a>,
+    function: impl Fn(&str, &str) -> FnResult<'a>,
+) -> FnResult<'a> {
+    binary(fn_name, args, |v1, v2| {
+        let Value::String(s1) = v1 else {
+            return Err(FnCallError {
+                fn_name: fn_name.to_string(),
+                reason: EvalError::TypeError {
+                    message: format!("Expected a string as the first argument, got {v1:?}"),
+                }
+                .into(),
+            });
+        };
+        let Value::String(s2) = v2 else {
+            return Err(FnCallError {
+                fn_name: fn_name.to_string(),
+                reason: EvalError::TypeError {
+                    message: format!("Expected a string as the second argument, got {v2:?}"),
+                }
+                .into(),
+            });
+        };
+
+        function(s1, s2)
+    })
+}
+
+fn len(args: FnArgs<'_>) -> FnResult<'_> {
+    unary("len", args, |v| {
+        let len = match v {
+            Value::String(s) => s.chars().count(),
+            Value::Array(arr) => arr.len(),
+            Value::Object(obj) => obj.len(),
+            _ => {
+                return Err(FnCallError {
+                    fn_name: "len".to_string(),
+                    reason: EvalError::TypeError {
+                        message: "Expected a string, array, or object".to_string(),
+                    }
+                    .into(),
+                });
+            }
+        };
+        Ok(Value::Int(len as i64))
+    })
 }
 
 fn starts_with(args: FnArgs<'_>) -> FnResult<'_> {
@@ -106,8 +133,18 @@ fn ends_with(args: FnArgs<'_>) -> FnResult<'_> {
 }
 
 fn contains(args: FnArgs<'_>) -> FnResult<'_> {
-    string_binary("contains", args, |s, other| {
-        Ok(Value::Bool(s.contains(other)))
+    binary("contains", args, |v1, v2| match (v1, v2) {
+        (Value::String(s), Value::String(sub)) => Ok(Value::Bool(s.contains(sub.as_ref()))),
+        (Value::Array(arr), item) => Ok(Value::Bool(arr.iter().any(|e| e == item))),
+        (Value::Object(obj), Value::String(key)) => Ok(Value::Bool(obj.contains_key(key.as_ref()))),
+        _ => Err(FnCallError {
+            fn_name: "contains".to_string(),
+            reason: EvalError::TypeError {
+                message: "Expected (string, string), (array, value), or (object, string) arguments"
+                    .to_string(),
+            }
+            .into(),
+        }),
     })
 }
 

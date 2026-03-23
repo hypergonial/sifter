@@ -8,7 +8,7 @@ use nom::{
     combinator::{map, map_res, opt, recognize, value},
     error::ParseError,
     multi::{separated_list0, separated_list1},
-    sequence::{delimited, preceded, terminated},
+    sequence::{delimited, preceded, separated_pair, terminated},
 };
 
 use super::types::{Exp, FunctionItem, Value, VarAccess, VarName};
@@ -126,6 +126,50 @@ fn cooked_string(input: &str) -> IResult<&str, Cow<'_, str>> {
 /// with an optional "r" prefix for raw strings
 fn string(input: &str) -> IResult<&str, Cow<'_, str>> {
     alt((raw_string, cooked_string)).parse(input)
+}
+
+/// Parse an array literal (e.g. `[1, 2, 3]`)
+///
+/// ## Parameters
+///
+/// - `input`: The input string to parse
+///
+/// ## Returns
+///
+/// The parsed array as a vector of expressions
+///
+/// ## Errors
+///
+/// - If the input string does not match the expected pattern
+///   (e.g. missing brackets, missing commas, etc.), a parsing error will be returned.
+fn parse_array(input: &str) -> IResult<&str, Vec<Exp<'_>>> {
+    delimited(
+        ws(char('[')),
+        separated_list0(ws(char(',')), parse_exp),
+        ws(char(']')),
+    )
+    .parse(input)
+}
+
+/// Parse an object literal (e.g. `{"key": "value", "foo": 123}`)
+///
+/// ## Parameters
+///
+/// - `input`: The input string to parse
+///
+/// ## Returns
+///
+/// The parsed object as a vector of key-value pairs, where the key is a string and the value is an expression
+fn parse_object(input: &str) -> IResult<&str, Vec<(String, Exp<'_>)>> {
+    delimited(
+        ws(char('{')),
+        separated_list0(
+            ws(char(',')),
+            separated_pair(map(string, Cow::into_owned), ws(char(':')), parse_exp),
+        ),
+        ws(char('}')),
+    )
+    .parse(input)
 }
 
 /// Parse a non-keyword identifier
@@ -356,6 +400,8 @@ fn parse_literal(input: &str) -> IResult<&str, Value<'_>> {
 fn parse_atom(input: &str) -> IResult<&str, Exp<'_>> {
     alt((
         ws(parse_literal).map(Exp::literal),
+        ws(parse_array).map(Exp::array),
+        ws(parse_object).map(|v| Exp::object(v.into_iter().collect())),
         // Function call
         ws(parse_fn).map(Exp::fn_call),
         // Variable names
@@ -503,40 +549,28 @@ mod tests {
             parse_comp("123 > 456"),
             Ok((
                 "",
-                Exp::gt(
-                    Exp::literal(Value::Int(123)),
-                    Exp::literal(Value::Int(456))
-                )
+                Exp::gt(Exp::literal(Value::Int(123)), Exp::literal(Value::Int(456)))
             ))
         );
         assert_eq!(
             parse_comp("123 < 456"),
             Ok((
                 "",
-                Exp::lt(
-                    Exp::literal(Value::Int(123)),
-                    Exp::literal(Value::Int(456))
-                )
+                Exp::lt(Exp::literal(Value::Int(123)), Exp::literal(Value::Int(456)))
             ))
         );
         assert_eq!(
             parse_comp("123 >= 456"),
             Ok((
                 "",
-                Exp::geq(
-                    Exp::literal(Value::Int(123)),
-                    Exp::literal(Value::Int(456))
-                )
+                Exp::geq(Exp::literal(Value::Int(123)), Exp::literal(Value::Int(456)))
             ))
         );
         assert_eq!(
             parse_comp("123 <= 456"),
             Ok((
                 "",
-                Exp::leq(
-                    Exp::literal(Value::Int(123)),
-                    Exp::literal(Value::Int(456))
-                )
+                Exp::leq(Exp::literal(Value::Int(123)), Exp::literal(Value::Int(456)))
             ))
         );
     }
@@ -756,6 +790,48 @@ mod tests {
     }
 
     #[test]
+    fn test_array_parser() {
+        let (_, array) = parse_array("[1, 2, 3]").expect("Failed to parse array");
+
+        assert_eq!(
+            array,
+            vec![
+                Exp::literal(Value::Int(1)),
+                Exp::literal(Value::Int(2)),
+                Exp::literal(Value::Int(3))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_heterogeneous_array_parser() {
+        let (_, array) = parse_array("[1, 'two', 3.0]").expect("Failed to parse array");
+
+        assert_eq!(
+            array,
+            vec![
+                Exp::literal(Value::Int(1)),
+                Exp::literal(Value::String("two".into())),
+                Exp::literal(Value::Float(3.0))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_object_parser() {
+        let (_, object) =
+            parse_object("{\"key\": \"value\", \"foo\": 123}").expect("Failed to parse object");
+
+        assert_eq!(
+            object,
+            vec![
+                ("key".into(), Exp::literal(Value::String("value".into()))),
+                ("foo".into(), Exp::literal(Value::Int(123)))
+            ]
+        );
+    }
+
+    #[test]
     fn test_fn_parser() {
         let (_, parser_function) =
             parse_fn("startsWith('hello')").expect("Failed to parse matcher function");
@@ -795,10 +871,7 @@ mod tests {
         assert_eq!(parser_function.name(), "between");
         assert_eq!(
             parser_function.args(),
-            vec![
-                Exp::literal(Value::Int(1)),
-                Exp::literal(Value::Int(10))
-            ]
+            vec![Exp::literal(Value::Int(1)), Exp::literal(Value::Int(10))]
         );
     }
 
@@ -810,10 +883,7 @@ mod tests {
         assert_eq!(parser_function.name(), "between");
         assert_eq!(
             parser_function.args(),
-            vec![
-                Exp::literal(Value::Int(1)),
-                Exp::literal(Value::Int(10))
-            ]
+            vec![Exp::literal(Value::Int(1)), Exp::literal(Value::Int(10))]
         );
     }
 

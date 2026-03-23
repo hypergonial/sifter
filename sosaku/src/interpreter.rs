@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Debug};
+use std::{borrow::Cow, collections::BTreeMap, fmt::Debug};
 
 use crate::{
     JsonValue, VarAccessError,
@@ -144,6 +144,29 @@ fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     Ok(Cow::Owned(value))
 }
 
+fn eval_array<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
+    array: &'exp Vec<Exp<'exp>>,
+    env: &'var Env<'var, V>,
+) -> Result<Cow<'out, Value<'out>>, EvalError> {
+    array
+        .iter()
+        .map(|e| eval(e, env).map(Cow::into_owned))
+        .collect::<Result<Value<'_>, _>>()
+        .map(Cow::Owned)
+}
+
+fn eval_object<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
+    object: &'exp BTreeMap<String, Exp<'exp>>,
+    env: &'var Env<'var, V>,
+) -> Result<Cow<'out, Value<'out>>, EvalError> {
+    object
+        .iter()
+        .map(|(k, e)| (k.clone(), eval(e, env).map(Cow::into_owned)))
+        .map(|(k, rv)| rv.map(|v| (k, v)))
+        .collect::<Result<Value<'_>, _>>()
+        .map(Cow::Owned)
+}
+
 fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     function: &'exp FunctionItem<'exp>,
     env: &'var Env<'var, V>,
@@ -167,12 +190,14 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
         .map(|l| Cow::Owned(l.into_owned()))
 }
 
-pub(super) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
+pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     exp: &'exp Exp,
     env: &'var Env<'var, V>,
 ) -> Result<Cow<'out, Value<'out>>, EvalError> {
     match exp {
         Exp::Literal(value) => Ok(Cow::Borrowed(value)),
+        Exp::Array(array) => eval_array(array, env),
+        Exp::Object(object) => eval_object(object, env),
         Exp::Var(var) => eval_varaccess(var, env),
         Exp::FnCall(function) => eval_fncall(function, env),
         Exp::Neg(exp) => eval_neg(exp, env),
@@ -219,7 +244,7 @@ mod tests {
             .build()
     });
 
-    static EXPS: LazyLock<[(&str, Result<Value, EvalError>); 27]> = LazyLock::new(|| {
+    static EXPS: LazyLock<[(&str, Result<Value, EvalError>); 33]> = LazyLock::new(|| {
         [
             // Basic variable access
             (
@@ -228,7 +253,7 @@ mod tests {
             ),
             // Accessing nested properties and comparing to a literal
             (
-                r#"length(y) == 5 && foo.baz == "world""#,
+                r#"len(y) == 5 && foo.baz == "world""#,
                 Ok(Value::Bool(true)),
             ),
             // Regex match with anchors
@@ -267,12 +292,27 @@ mod tests {
                 "foo.qux.nested[0] < foo.qux.nested[2]",
                 Ok(Value::Bool(true)),
             ),
+            // Array equality
+            ("foo.qux.nested == [1, 2, 3]", Ok(Value::Bool(true))),
+            // Object equality (order of keys shouldn't matter)
+            (
+                "foo == {\"baz\": \"world\", \"bar\": 123, \"qux\": {\"nested\": [1, 2, 3]}}",
+                Ok(Value::Bool(true)),
+            ),
             // endsWith function
             (r#"endsWith(y, "lo")"#, Ok(Value::Bool(true))),
             // contains — substring present
             (r#"contains(y, "ell")"#, Ok(Value::Bool(true))),
             // contains — substring absent
             (r#"contains(y, "xyz")"#, Ok(Value::Bool(false))),
+            // contains — array contains value
+            ("contains(foo.qux.nested, 2)", Ok(Value::Bool(true))),
+            // contains - array does not contain value
+            ("contains(foo.qux.nested, 42)", Ok(Value::Bool(false))),
+            // contains - object contains key
+            (r#"contains(foo, "bar")"#, Ok(Value::Bool(true))),
+            // contains - object does not contain key
+            (r#"contains(foo, "nonexistent")"#, Ok(Value::Bool(false))),
             // ! applied directly to a function call
             (r#"!matches(y, "^w")"#, Ok(Value::Bool(true))),
             // String literal on the LHS of ==
@@ -298,11 +338,11 @@ mod tests {
                 })),
             ),
             (
-                "length(42)",
+                "len(42)",
                 Err(EvalError::FnCallError(FnCallError {
-                    fn_name: "length".to_string(),
+                    fn_name: "len".to_string(),
                     reason: EvalError::TypeError {
-                        message: "Expected a string".to_string(),
+                        message: "Expected a string, array, or object".to_string(),
                     }
                     .into(),
                 })),
@@ -344,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_eval_fncall() {
-        let exp = Exp::fn_call(FunctionItem::new("length", [Exp::varname("y").unwrap()]));
+        let exp = Exp::fn_call(FunctionItem::new("len", [Exp::varname("y").unwrap()]));
         let result = eval(&exp, &ENV).unwrap();
         assert_eq!(result.into_owned(), Value::Int(5));
     }
