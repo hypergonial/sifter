@@ -3,6 +3,8 @@ use std::{
     hash::BuildHasher,
 };
 
+use crate::Literal;
+
 /// A trait representing a JSON object map, which is a mapping from string keys to JSON values.
 pub trait JsonMap<V: JsonValue> {
     fn get(&self, key: &str) -> Option<&V>;
@@ -184,6 +186,69 @@ pub trait JsonValue: Sized {
     /// Return true if this JSON value is null.
     fn is_null(&self) -> bool {
         self.as_null().is_some()
+    }
+}
+
+impl JsonValue for Literal<'_> {
+    type MapType = BTreeMap<String, Self>;
+
+    fn as_object(&self) -> Option<&Self::MapType> {
+        None
+    }
+
+    fn as_object_mut(&mut self) -> Option<&mut Self::MapType> {
+        None
+    }
+
+    fn as_array(&self) -> Option<&Vec<Self>> {
+        None
+    }
+
+    fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
+        None
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Literal::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn as_bool(&self) -> Option<bool> {
+        match self {
+            Literal::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    fn as_u64(&self) -> Option<u64> {
+        match self {
+            Literal::Int(n) if *n >= 0 => Some(*n as u64),
+            _ => None,
+        }
+    }
+
+    fn as_i64(&self) -> Option<i64> {
+        match self {
+            Literal::Int(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    fn as_f64(&self) -> Option<f64> {
+        match self {
+            Literal::Float(n) => Some(*n),
+            Literal::Int(n) => Some(*n as f64),
+            _ => None,
+        }
+    }
+
+    fn as_null(&self) -> Option<()> {
+        match self {
+            Literal::Null => Some(()),
+            _ => None,
+        }
     }
 }
 
