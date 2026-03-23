@@ -11,7 +11,7 @@ use nom::{
     sequence::{delimited, preceded, terminated},
 };
 
-use super::types::{Exp, FunctionItem, Literal, VarAccess, VarName};
+use super::types::{Exp, FunctionItem, Value, VarAccess, VarName};
 
 static KEYWORDS: [&str; 3] = ["true", "false", "null"];
 
@@ -341,13 +341,13 @@ fn parse_fn(input: &str) -> IResult<&str, FunctionItem<'_>> {
 }
 
 /// Parse a literal value (integer, float, boolean, or string)
-fn parse_literal(input: &str) -> IResult<&str, Literal<'_>> {
+fn parse_literal(input: &str) -> IResult<&str, Value<'_>> {
     alt((
-        ws(double).map(Literal::Float),
-        ws(integer).map(Literal::Int),
-        alt((ws(tag("true")), ws(tag("false")))).map(|v: &str| Literal::Bool(v == "true")),
-        ws(tag("null")).map(|_| Literal::Null),
-        ws(string).map(Literal::String),
+        ws(double).map(Value::Float),
+        ws(integer).map(Value::Int),
+        alt((ws(tag("true")), ws(tag("false")))).map(|v: &str| Value::Bool(v == "true")),
+        ws(tag("null")).map(|_| Value::Null),
+        ws(string).map(Value::String),
     ))
     .parse(input)
 }
@@ -417,35 +417,35 @@ mod tests {
 
     #[test]
     fn test_atom() {
-        assert_eq!(parse_atom("123"), Ok(("", Exp::literal(Literal::Int(123)))));
+        assert_eq!(parse_atom("123"), Ok(("", Exp::literal(Value::Int(123)))));
         assert_eq!(
             parse_atom("-123  "),
-            Ok(("", Exp::literal(Literal::Int(-123))))
+            Ok(("", Exp::literal(Value::Int(-123))))
         );
         assert_eq!(
             parse_atom("123.456  "),
-            Ok(("", Exp::literal(Literal::Float(123.456))))
+            Ok(("", Exp::literal(Value::Float(123.456))))
         );
         assert_eq!(
             parse_atom("-123.456  "),
-            Ok(("", Exp::literal(Literal::Float(-123.456))))
+            Ok(("", Exp::literal(Value::Float(-123.456))))
         );
         assert_eq!(
             parse_atom("true  "),
-            Ok(("", Exp::literal(Literal::Bool(true))))
+            Ok(("", Exp::literal(Value::Bool(true))))
         );
         assert_eq!(
             parse_atom("false  "),
-            Ok(("", Exp::literal(Literal::Bool(false))))
+            Ok(("", Exp::literal(Value::Bool(false))))
         );
         assert_eq!(parse_atom("abc"), Ok(("", Exp::varname("abc").unwrap())));
 
         assert_eq!(
             parse_atom("'hello\\' world'    "),
-            Ok(("", Exp::literal(Literal::String("hello' world".into()))))
+            Ok(("", Exp::literal(Value::String("hello' world".into()))))
         );
 
-        assert_eq!(parse_atom("null "), Ok(("", Exp::literal(Literal::Null))));
+        assert_eq!(parse_atom("null "), Ok(("", Exp::literal(Value::Null))));
     }
 
     #[test]
@@ -481,15 +481,15 @@ mod tests {
     fn test_neg() {
         assert_eq!(
             parse_neg("!123"),
-            Ok(("", Exp::neg(Exp::literal(Literal::Int(123)))))
+            Ok(("", Exp::neg(Exp::literal(Value::Int(123)))))
         );
         assert_eq!(
             parse_neg("!true"),
-            Ok(("", Exp::neg(Exp::literal(Literal::Bool(true)))))
+            Ok(("", Exp::neg(Exp::literal(Value::Bool(true)))))
         );
         assert_eq!(
             parse_neg("!false"),
-            Ok(("", Exp::neg(Exp::literal(Literal::Bool(false)))))
+            Ok(("", Exp::neg(Exp::literal(Value::Bool(false)))))
         );
         assert_eq!(
             parse_neg("!abc"),
@@ -504,8 +504,8 @@ mod tests {
             Ok((
                 "",
                 Exp::gt(
-                    Exp::literal(Literal::Int(123)),
-                    Exp::literal(Literal::Int(456))
+                    Exp::literal(Value::Int(123)),
+                    Exp::literal(Value::Int(456))
                 )
             ))
         );
@@ -514,8 +514,8 @@ mod tests {
             Ok((
                 "",
                 Exp::lt(
-                    Exp::literal(Literal::Int(123)),
-                    Exp::literal(Literal::Int(456))
+                    Exp::literal(Value::Int(123)),
+                    Exp::literal(Value::Int(456))
                 )
             ))
         );
@@ -524,8 +524,8 @@ mod tests {
             Ok((
                 "",
                 Exp::geq(
-                    Exp::literal(Literal::Int(123)),
-                    Exp::literal(Literal::Int(456))
+                    Exp::literal(Value::Int(123)),
+                    Exp::literal(Value::Int(456))
                 )
             ))
         );
@@ -534,8 +534,8 @@ mod tests {
             Ok((
                 "",
                 Exp::leq(
-                    Exp::literal(Literal::Int(123)),
-                    Exp::literal(Literal::Int(456))
+                    Exp::literal(Value::Int(123)),
+                    Exp::literal(Value::Int(456))
                 )
             ))
         );
@@ -547,7 +547,7 @@ mod tests {
             parse_exp("1 == 2"),
             Ok((
                 "",
-                Exp::eq(Exp::literal(Literal::Int(1)), Exp::literal(Literal::Int(2)))
+                Exp::eq(Exp::literal(Value::Int(1)), Exp::literal(Value::Int(2)))
             ))
         );
         assert!(parse_exp("1 == 2 == 3").is_err());
@@ -559,7 +559,7 @@ mod tests {
             parse_exp("1 != 2"),
             Ok((
                 "",
-                Exp::neq(Exp::literal(Literal::Int(1)), Exp::literal(Literal::Int(2)))
+                Exp::neq(Exp::literal(Value::Int(1)), Exp::literal(Value::Int(2)))
             ))
         );
         assert!(parse_exp("1 != 2 != 3").is_err());
@@ -572,8 +572,8 @@ mod tests {
             Ok((
                 "",
                 Exp::and(
-                    Exp::literal(Literal::Bool(true)),
-                    Exp::literal(Literal::Bool(false))
+                    Exp::literal(Value::Bool(true)),
+                    Exp::literal(Value::Bool(false))
                 )
             ))
         );
@@ -583,10 +583,10 @@ mod tests {
                 "",
                 Exp::and(
                     Exp::and(
-                        Exp::literal(Literal::Bool(true)),
-                        Exp::literal(Literal::Bool(false))
+                        Exp::literal(Value::Bool(true)),
+                        Exp::literal(Value::Bool(false))
                     ),
-                    Exp::literal(Literal::Bool(true))
+                    Exp::literal(Value::Bool(true))
                 )
             ))
         );
@@ -599,10 +599,10 @@ mod tests {
             Ok((
                 "",
                 Exp::or(
-                    Exp::literal(Literal::Bool(true)),
+                    Exp::literal(Value::Bool(true)),
                     Exp::and(
-                        Exp::literal(Literal::Bool(false)),
-                        Exp::literal(Literal::Bool(false))
+                        Exp::literal(Value::Bool(false)),
+                        Exp::literal(Value::Bool(false))
                     )
                 )
             ))
@@ -616,8 +616,8 @@ mod tests {
             Ok((
                 "",
                 Exp::or(
-                    Exp::literal(Literal::Bool(true)),
-                    Exp::literal(Literal::Bool(false))
+                    Exp::literal(Value::Bool(true)),
+                    Exp::literal(Value::Bool(false))
                 )
             ))
         );
@@ -627,10 +627,10 @@ mod tests {
                 "",
                 Exp::or(
                     Exp::or(
-                        Exp::literal(Literal::Bool(true)),
-                        Exp::literal(Literal::Bool(false))
+                        Exp::literal(Value::Bool(true)),
+                        Exp::literal(Value::Bool(false))
                     ),
-                    Exp::literal(Literal::Bool(true))
+                    Exp::literal(Value::Bool(true))
                 )
             ))
         );
@@ -644,10 +644,10 @@ mod tests {
                 "",
                 Exp::and(
                     Exp::or(
-                        Exp::literal(Literal::Bool(true)),
-                        Exp::literal(Literal::Bool(false))
+                        Exp::literal(Value::Bool(true)),
+                        Exp::literal(Value::Bool(false))
                     ),
-                    Exp::literal(Literal::Bool(true))
+                    Exp::literal(Value::Bool(true))
                 )
             ))
         );
@@ -687,12 +687,12 @@ mod tests {
                 "",
                 Exp::and(
                     Exp::neg(Exp::gt(
-                        Exp::literal(Literal::Int(1)),
-                        Exp::literal(Literal::Int(2))
+                        Exp::literal(Value::Int(1)),
+                        Exp::literal(Value::Int(2))
                     )),
                     Exp::or(
-                        Exp::leq(Exp::literal(Literal::Int(3)), Exp::literal(Literal::Int(4))),
-                        Exp::neq(Exp::literal(Literal::Int(5)), Exp::literal(Literal::Int(6)))
+                        Exp::leq(Exp::literal(Value::Int(3)), Exp::literal(Value::Int(4))),
+                        Exp::neq(Exp::literal(Value::Int(5)), Exp::literal(Value::Int(6)))
                     )
                 )
             ))
@@ -708,11 +708,11 @@ mod tests {
                 Exp::and(
                     Exp::neg(Exp::fn_call(FunctionItem::new(
                         "startsWith",
-                        vec![Exp::literal(Literal::String("hello".into()))]
+                        vec![Exp::literal(Value::String("hello".into()))]
                     ))),
                     Exp::or(
-                        Exp::leq(Exp::literal(Literal::Int(3)), Exp::literal(Literal::Int(4))),
-                        Exp::neq(Exp::literal(Literal::Int(5)), Exp::literal(Literal::Int(6)))
+                        Exp::leq(Exp::literal(Value::Int(3)), Exp::literal(Value::Int(4))),
+                        Exp::neq(Exp::literal(Value::Int(5)), Exp::literal(Value::Int(6)))
                     )
                 )
             ))
@@ -723,35 +723,35 @@ mod tests {
     fn test_string_literal() {
         assert_eq!(
             parse_literal("'hello world'"),
-            Ok(("", Literal::String("hello world".into())))
+            Ok(("", Value::String("hello world".into())))
         );
         assert_eq!(
             parse_literal("\"hello world\""),
-            Ok(("", Literal::String("hello world".into())))
+            Ok(("", Value::String("hello world".into())))
         );
         assert_eq!(
             parse_literal("'hello \\'world\\''"),
-            Ok(("", Literal::String("hello 'world'".into())))
+            Ok(("", Value::String("hello 'world'".into())))
         );
         assert_eq!(
             parse_literal("\"hello \\\"world\\\"\""),
-            Ok(("", Literal::String("hello \"world\"".into())))
+            Ok(("", Value::String("hello \"world\"".into())))
         );
         assert_eq!(
             parse_literal("'hello\\nworld'"),
-            Ok(("", Literal::String("hello\nworld".into())))
+            Ok(("", Value::String("hello\nworld".into())))
         );
         assert_eq!(
             parse_literal("'hello\\tworld'"),
-            Ok(("", Literal::String("hello\tworld".into())))
+            Ok(("", Value::String("hello\tworld".into())))
         );
         assert_eq!(
             parse_literal("r'hello\\n\\'world'"),
-            Ok(("", Literal::String("hello\\n\\'world".into())))
+            Ok(("", Value::String("hello\\n\\'world".into())))
         );
         assert_eq!(
             parse_literal("r\"hello\\n\\\"world\""),
-            Ok(("", Literal::String("hello\\n\\\"world".into())))
+            Ok(("", Value::String("hello\\n\\\"world".into())))
         );
     }
 
@@ -763,7 +763,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.args(),
-            vec![Exp::literal(Literal::String("hello".into()))]
+            vec![Exp::literal(Value::String("hello".into()))]
         );
     }
 
@@ -783,7 +783,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.args(),
-            vec![Exp::literal(Literal::String("hello".into()))]
+            vec![Exp::literal(Value::String("hello".into()))]
         );
     }
 
@@ -796,8 +796,8 @@ mod tests {
         assert_eq!(
             parser_function.args(),
             vec![
-                Exp::literal(Literal::Int(1)),
-                Exp::literal(Literal::Int(10))
+                Exp::literal(Value::Int(1)),
+                Exp::literal(Value::Int(10))
             ]
         );
     }
@@ -811,8 +811,8 @@ mod tests {
         assert_eq!(
             parser_function.args(),
             vec![
-                Exp::literal(Literal::Int(1)),
-                Exp::literal(Literal::Int(10))
+                Exp::literal(Value::Int(1)),
+                Exp::literal(Value::Int(10))
             ]
         );
     }
@@ -828,9 +828,9 @@ mod tests {
             vec![
                 Exp::fn_call(FunctionItem::new(
                     "length",
-                    vec![Exp::literal(Literal::String("hello".into()))]
+                    vec![Exp::literal(Value::String("hello".into()))]
                 )),
-                Exp::literal(Literal::Int(10))
+                Exp::literal(Value::Int(10))
             ]
         );
     }
@@ -844,7 +844,7 @@ mod tests {
         assert_eq!(parser_function.name(), "matches");
         assert_eq!(
             parser_function.args(),
-            vec![Exp::literal(Literal::String(r"[^\.]*test.ya?ml".into()))]
+            vec![Exp::literal(Value::String(r"[^\.]*test.ya?ml".into()))]
         );
     }
 
@@ -856,7 +856,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.args(),
-            vec![Exp::literal(Literal::String("hello".into()))]
+            vec![Exp::literal(Value::String("hello".into()))]
         );
     }
 
@@ -880,7 +880,7 @@ mod tests {
         assert_eq!(parser_function.name(), "startsWith");
         assert_eq!(
             parser_function.args(),
-            vec![Exp::literal(Literal::String("".into()))]
+            vec![Exp::literal(Value::String("".into()))]
         );
     }
 }

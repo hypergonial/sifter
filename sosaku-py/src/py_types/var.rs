@@ -52,7 +52,7 @@ impl PyVarAccess {
             .inner
             .access(&value)
             .map_err(|e| PyValueError::new_err(e.to_string()))?
-            .into())
+            .clone())
     }
 
     /// Access the variable specified by this `PyVarAccess` from the given variable bindings.
@@ -77,6 +77,6 @@ impl PyVarAccess {
             .inner
             .access_from_bindings(&sosaku::Env::new().bind_multiple(bindings).build())
             .map_err(|e| PyValueError::new_err(e.to_string()))?
-            .into())
+            .into_owned())
     }
 }

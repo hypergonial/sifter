@@ -4,7 +4,7 @@ use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyResult,
     types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods, PyTypeMethods},
 };
-use sosaku::{JsonValue, Literal};
+use sosaku::{JsonValue, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PyJsonValue {
@@ -76,20 +76,28 @@ impl<'py> IntoPyObject<'py> for PyJsonValue {
     }
 }
 
-impl<'a> From<Literal<'a>> for PyJsonValue {
-    fn from(lit: Literal<'a>) -> Self {
+impl<'a> From<Value<'a>> for PyJsonValue {
+    fn from(lit: Value<'a>) -> Self {
         match lit {
-            Literal::Null => Self::Null,
-            Literal::Bool(b) => Self::Bool(b),
-            Literal::Int(i) => Self::Int(i),
-            Literal::Float(f) => Self::Float(f),
-            Literal::String(s) => Self::String(s.into_owned()),
+            Value::Null => Self::Null,
+            Value::Bool(b) => Self::Bool(b),
+            Value::Int(i) => Self::Int(i),
+            Value::Float(f) => Self::Float(f),
+            Value::String(s) => Self::String(s.into_owned()),
+            Value::Array(a) => Self::Array(a.into_iter().map(Self::from).collect()),
+            Value::Object(o) => {
+                Self::Object(o.into_iter().map(|(k, v)| (k, Self::from(v))).collect())
+            }
         }
     }
 }
 
 impl JsonValue for PyJsonValue {
     type MapType = BTreeMap<String, Self>;
+
+    fn null() -> Self {
+        Self::Null
+    }
 
     fn as_object(&self) -> Option<&Self::MapType> {
         match self {
@@ -99,6 +107,13 @@ impl JsonValue for PyJsonValue {
     }
 
     fn as_object_mut(&mut self) -> Option<&mut Self::MapType> {
+        match self {
+            Self::Object(map) => Some(map),
+            _ => None,
+        }
+    }
+
+    fn into_object(self) -> Option<Self::MapType> {
         match self {
             Self::Object(map) => Some(map),
             _ => None,
@@ -119,7 +134,21 @@ impl JsonValue for PyJsonValue {
         }
     }
 
+    fn into_array(self) -> Option<Vec<Self>> {
+        match self {
+            Self::Array(vec) => Some(vec),
+            _ => None,
+        }
+    }
+
     fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn into_string(self) -> Option<String> {
         match self {
             Self::String(s) => Some(s),
             _ => None,

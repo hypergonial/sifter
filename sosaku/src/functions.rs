@@ -2,13 +2,13 @@ use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
 use crate::{EvalError, FnCallError};
 
-use super::types::Literal;
+use super::types::Value;
 
-/// A sequence of arguments passed to a function, represented as a slice of [`Literal`] values.
-pub type FnArgs<'a> = &'a [Literal<'a>];
+/// A sequence of arguments passed to a function, represented as a slice of [`Value`] values.
+pub type FnArgs<'a> = &'a [Value<'a>];
 
-/// The result of a function call, which can either be a successful [`Literal`] value or an error if the function call fails.
-pub type FnResult<'a> = Result<Literal<'a>, FnCallError>;
+/// The result of a function call, which can either be a successful [`Value`] value or an error if the function call fails.
+pub type FnResult<'a> = Result<Value<'a>, FnCallError>;
 
 /// The type of a function callback, takes a slice of arguments and returns a result or an error.
 pub type FnCallback = for<'a> fn(FnArgs<'a>) -> FnResult<'a>;
@@ -50,7 +50,7 @@ fn string_unary<'a>(
     }
 
     match &args[0] {
-        Literal::String(s) => function(s),
+        Value::String(s) => function(s),
         _ => Err(FnCallError {
             fn_name: fn_name.to_string(),
             reason: EvalError::TypeError {
@@ -78,7 +78,7 @@ fn string_binary<'a>(
     }
 
     match (&args[0], &args[1]) {
-        (Literal::String(s), Literal::String(other)) => function(s, other),
+        (Value::String(s), Value::String(other)) => function(s, other),
         _ => Err(FnCallError {
             fn_name: fn_name.to_string(),
             reason: EvalError::TypeError {
@@ -90,24 +90,24 @@ fn string_binary<'a>(
 }
 
 fn length(args: FnArgs<'_>) -> FnResult<'_> {
-    string_unary("length", args, |s| Ok(Literal::Int(s.len() as i64)))
+    string_unary("length", args, |s| Ok(Value::Int(s.len() as i64)))
 }
 
 fn starts_with(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("startsWith", args, |s, other| {
-        Ok(Literal::Bool(s.starts_with(other)))
+        Ok(Value::Bool(s.starts_with(other)))
     })
 }
 
 fn ends_with(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("endsWith", args, |s, other| {
-        Ok(Literal::Bool(s.ends_with(other)))
+        Ok(Value::Bool(s.ends_with(other)))
     })
 }
 
 fn contains(args: FnArgs<'_>) -> FnResult<'_> {
     string_binary("contains", args, |s, other| {
-        Ok(Literal::Bool(s.contains(other)))
+        Ok(Value::Bool(s.contains(other)))
     })
 }
 
@@ -120,7 +120,7 @@ fn matches(args: FnArgs<'_>) -> FnResult<'_> {
             }
             .into(),
         })?;
-        Ok(Literal::Bool(re.is_match(s)))
+        Ok(Value::Bool(re.is_match(s)))
     })
 }
 
@@ -136,7 +136,7 @@ fn into_bool(args: FnArgs<'_>) -> FnResult<'_> {
         });
     }
 
-    Ok(Literal::Bool(bool::from(&args[0])))
+    Ok(Value::Bool(bool::from(&args[0])))
 }
 
 fn into_string<'a>(args: FnArgs<'a>) -> FnResult<'a> {
@@ -153,14 +153,14 @@ fn into_string<'a>(args: FnArgs<'a>) -> FnResult<'a> {
 
     let string: Cow<'a, str> = (&args[0]).into();
 
-    Ok(Literal::String(string))
+    Ok(Value::String(string))
 }
 
 fn numeric_convert<'a, T>(
     fn_name: &'static str,
     args: FnArgs<'a>,
-    convert: impl Fn(&Literal<'a>) -> Option<T>,
-    wrap: impl Fn(T) -> Literal<'a>,
+    convert: impl Fn(&Value<'a>) -> Option<T>,
+    wrap: impl Fn(T) -> Value<'a>,
 ) -> FnResult<'a> {
     if args.len() != 1 {
         return Err(FnCallError {
@@ -188,9 +188,9 @@ fn numeric_convert<'a, T>(
 }
 
 fn into_int(args: FnArgs<'_>) -> FnResult<'_> {
-    numeric_convert("int", args, |v| i64::try_from(v).ok(), Literal::Int)
+    numeric_convert("int", args, |v| i64::try_from(v).ok(), Value::Int)
 }
 
 fn into_float(args: FnArgs<'_>) -> FnResult<'_> {
-    numeric_convert("float", args, |v| f64::try_from(v).ok(), Literal::Float)
+    numeric_convert("float", args, |v| f64::try_from(v).ok(), Value::Float)
 }

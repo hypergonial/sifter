@@ -3,10 +3,10 @@ use std::{
     hash::BuildHasher,
 };
 
-use crate::Literal;
+use crate::Value;
 
 /// A trait representing a JSON object map, which is a mapping from string keys to JSON values.
-pub trait JsonMap<V: JsonValue> {
+pub trait JsonMap<V: JsonValue>: IntoIterator<Item = (String, V)> {
     fn get(&self, key: &str) -> Option<&V>;
 
     fn get_mut(&mut self, key: &str) -> Option<&mut V>;
@@ -20,6 +20,14 @@ pub trait JsonMap<V: JsonValue> {
     fn remove(&mut self, key: &str) -> Option<V>;
 
     fn remove_entry(&mut self, key: &str) -> Option<(String, V)>;
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a V)>
+    where
+        V: 'a;
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (&'a String, &'a mut V)>
+    where
+        V: 'a;
 }
 
 #[cfg(feature = "serde")]
@@ -51,6 +59,20 @@ impl JsonMap<serde_json::Value> for serde_json::Map<String, serde_json::Value> {
     fn remove_entry(&mut self, key: &str) -> Option<(String, serde_json::Value)> {
         self.remove_entry(key)
     }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a serde_json::Value)>
+    where
+        serde_json::Value: 'a,
+    {
+        self.iter()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (&'a String, &'a mut serde_json::Value)>
+    where
+        serde_json::Value: 'a,
+    {
+        self.iter_mut()
+    }
 }
 
 impl<V: JsonValue, S: BuildHasher> JsonMap<V> for HashMap<String, V, S> {
@@ -80,6 +102,20 @@ impl<V: JsonValue, S: BuildHasher> JsonMap<V> for HashMap<String, V, S> {
 
     fn remove_entry(&mut self, key: &str) -> Option<(String, V)> {
         self.remove_entry(key)
+    }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a V)>
+    where
+        V: 'a,
+    {
+        self.iter()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (&'a String, &'a mut V)>
+    where
+        V: 'a,
+    {
+        self.iter_mut()
     }
 }
 
@@ -111,12 +147,31 @@ impl<V: JsonValue> JsonMap<V> for BTreeMap<String, V> {
     fn remove_entry(&mut self, key: &str) -> Option<(String, V)> {
         self.remove_entry(key)
     }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a V)>
+    where
+        V: 'a,
+    {
+        self.iter()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (&'a String, &'a mut V)>
+    where
+        V: 'a,
+    {
+        self.iter_mut()
+    }
 }
 
 /// A trait representing a JSON value, which can be one of several types (object, array, string, number, boolean, or null).
+///
+/// Any type implementing this trait can be used as a Sosaku JSON value in bindings.
 pub trait JsonValue: Sized {
     /// The type of JSON object map used by this JSON value type.
     type MapType: JsonMap<Self>;
+
+    /// Return the corresponding JSON value for null.
+    fn null() -> Self;
 
     /// Try to interpret this JSON value as an object, returning a reference to the underlying map if successful.
     fn as_object(&self) -> Option<&Self::MapType>;
@@ -124,11 +179,20 @@ pub trait JsonValue: Sized {
     /// Try to interpret this JSON value as an object, returning a mutable reference to the underlying map if successful.
     fn as_object_mut(&mut self) -> Option<&mut Self::MapType>;
 
+    /// Try to interpret this JSON value as an object, consuming it and returning the underlying map if successful.
+    fn into_object(self) -> Option<Self::MapType>;
+
     /// Try to interpret this JSON value as an array, returning a reference to the underlying vector if successful.
     fn as_array(&self) -> Option<&Vec<Self>>;
 
     /// Try to interpret this JSON value as an array, returning a mutable reference to the underlying vector if successful.
     fn as_array_mut(&mut self) -> Option<&mut Vec<Self>>;
+
+    /// Try to interpret this JSON value as an array, consuming it and returning the underlying vector if successful.
+    fn into_array(self) -> Option<Vec<Self>>;
+
+    /// Try to interpret this JSON value as a string, consuming it and returning the underlying string if successful.
+    fn into_string(self) -> Option<String>;
 
     /// Try to interpret this JSON value as a string, returning a reference to the underlying string if successful.
     fn as_str(&self) -> Option<&str>;
@@ -189,64 +253,101 @@ pub trait JsonValue: Sized {
     }
 }
 
-impl JsonValue for Literal<'_> {
+impl JsonValue for Value<'_> {
     type MapType = BTreeMap<String, Self>;
 
+    fn null() -> Self {
+        Value::Null
+    }
+
     fn as_object(&self) -> Option<&Self::MapType> {
-        None
+        match self {
+            Value::Object(map) => Some(map),
+            _ => None,
+        }
     }
 
     fn as_object_mut(&mut self) -> Option<&mut Self::MapType> {
-        None
+        match self {
+            Value::Object(map) => Some(map),
+            _ => None,
+        }
+    }
+
+    fn into_object(self) -> Option<Self::MapType> {
+        match self {
+            Value::Object(map) => Some(map),
+            _ => None,
+        }
     }
 
     fn as_array(&self) -> Option<&Vec<Self>> {
-        None
+        match self {
+            Value::Array(vec) => Some(vec),
+            _ => None,
+        }
     }
 
     fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
-        None
+        match self {
+            Value::Array(vec) => Some(vec),
+            _ => None,
+        }
+    }
+
+    fn into_array(self) -> Option<Vec<Self>> {
+        match self {
+            Value::Array(vec) => Some(vec),
+            _ => None,
+        }
+    }
+
+    fn into_string(self) -> Option<String> {
+        match self {
+            Value::String(s) => Some(s.into_owned()),
+            _ => None,
+        }
     }
 
     fn as_str(&self) -> Option<&str> {
         match self {
-            Literal::String(s) => Some(s),
+            Value::String(s) => Some(s),
             _ => None,
         }
     }
 
     fn as_bool(&self) -> Option<bool> {
         match self {
-            Literal::Bool(b) => Some(*b),
+            Value::Bool(b) => Some(*b),
             _ => None,
         }
     }
 
     fn as_u64(&self) -> Option<u64> {
         match self {
-            Literal::Int(n) if *n >= 0 => Some(*n as u64),
+            Value::Int(n) if *n >= 0 => Some(*n as u64),
             _ => None,
         }
     }
 
     fn as_i64(&self) -> Option<i64> {
         match self {
-            Literal::Int(n) => Some(*n),
+            Value::Int(n) => Some(*n),
             _ => None,
         }
     }
 
     fn as_f64(&self) -> Option<f64> {
         match self {
-            Literal::Float(n) => Some(*n),
-            Literal::Int(n) => Some(*n as f64),
+            Value::Float(n) => Some(*n),
+            Value::Int(n) => Some(*n as f64),
             _ => None,
         }
     }
 
     fn as_null(&self) -> Option<()> {
         match self {
-            Literal::Null => Some(()),
+            Value::Null => Some(()),
             _ => None,
         }
     }
@@ -256,6 +357,10 @@ impl JsonValue for Literal<'_> {
 impl JsonValue for serde_json::Value {
     type MapType = serde_json::Map<String, Self>;
 
+    fn null() -> Self {
+        Self::Null
+    }
+
     fn as_object(&self) -> Option<&Self::MapType> {
         self.as_object()
     }
@@ -264,12 +369,33 @@ impl JsonValue for serde_json::Value {
         self.as_object_mut()
     }
 
+    fn into_object(self) -> Option<Self::MapType> {
+        match self {
+            Self::Object(map) => Some(map),
+            _ => None,
+        }
+    }
+
     fn as_array(&self) -> Option<&Vec<Self>> {
         self.as_array()
     }
 
     fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
         self.as_array_mut()
+    }
+
+    fn into_array(self) -> Option<Vec<Self>> {
+        match self {
+            Self::Array(arr) => Some(arr),
+            _ => None,
+        }
+    }
+
+    fn into_string(self) -> Option<String> {
+        match self {
+            Self::String(s) => Some(s),
+            _ => None,
+        }
     }
 
     fn as_str(&self) -> Option<&str> {

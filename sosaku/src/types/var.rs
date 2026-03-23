@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display, Write};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Display, Write},
+};
 
 use nom::Finish;
 
@@ -10,7 +13,6 @@ use crate::{
     types::{
         env::Env,
         json::{JsonMap, JsonValue},
-        literal::Literal,
     },
 };
 
@@ -90,7 +92,7 @@ impl VarAccess {
         mut names: &[VarName],
         value: &'a V,
         ignore_first: bool,
-    ) -> Result<Literal<'a>, VarAccessError> {
+    ) -> Result<&'a V, VarAccessError> {
         let mut current = value;
 
         let var = names.last().ok_or(VarAccessError::EmptyAccess)?;
@@ -133,14 +135,8 @@ impl VarAccess {
         }
 
         match current {
-            v if v.is_null() => Ok(Literal::Null),
-            v if v.is_object() => Err(VarAccessError::TypeError {
-                message: format!("Cannot use object in expression '{}'", var.name()),
-            }),
-            v if v.is_array() && var.index().is_none() => Err(VarAccessError::TypeError {
-                message: format!("Cannot use array in expression '{}'", var.name()),
-            }),
-            v if v.is_array() => {
+            v if v.is_array() && var.index().is_none() => Ok(v),
+            v if v.is_array() && var.index.is_some() => {
                 let index = var.index().ok_or_else(|| VarAccessError::ConversionError {
                     message: format!("Expected array index for '{}'", var.name()),
                 })?;
@@ -156,45 +152,38 @@ impl VarAccess {
                         ),
                     })?;
 
-                Literal::from_json_object(value).map_err(|e| VarAccessError::ConversionError {
-                    message: format!("Failed to convert value at '{}': {e}", var.name()),
-                })
+                Ok(value)
             }
-            v => Literal::from_json_object(v).map_err(|e| VarAccessError::ConversionError {
-                message: format!("Failed to convert value at '{}': {e}", var.name()),
-            }),
+            v => Ok(v),
         }
     }
 
     /// Access the value denoted by this accessor from the given JSON value.
     ///
     /// # Returns
-    /// - `Ok(Some(Literal))` if the value was successfully accessed and converted to a `Literal`
-    /// - `Ok(None)` if the value was `null`
+    /// The value accessed from the provided JSON value according to
+    /// the variable access specified by this [`VarAccess`].
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
-    pub fn access<'a, V: JsonValue + Debug>(
-        &self,
-        value: &'a V,
-    ) -> Result<Literal<'a>, VarAccessError> {
+    pub fn access<'a, V: JsonValue + Debug>(&self, value: &'a V) -> Result<&'a V, VarAccessError> {
         Self::access_names(&self.names, value, false)
     }
 
     /// Access the value denoted by this accessor from the given JSON value.
     ///
     /// # Returns
-    /// - `Ok(Some(Literal))` if the value was successfully accessed and converted to a `Literal`
-    /// - `Ok(None)` if the value was `null`
+    /// The value accessed from the provided JSON value according to
+    /// the variable access specified by this [`VarAccess`].
     ///
     /// # Errors
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
     pub fn access_from_bindings<'a, V: JsonValue + Debug + Clone>(
         &self,
         env: &'a Env<'a, V>,
-    ) -> Result<Literal<'a>, VarAccessError> {
+    ) -> Result<Cow<'a, V>, VarAccessError> {
         if self.names.is_empty() {
-            return Ok(Literal::Null);
+            return Ok(Cow::Owned(V::null()));
         }
 
         let first_name = self.names[0].name();
@@ -205,7 +194,7 @@ impl VarAccess {
                     variable: first_name.to_string(),
                 })?;
 
-        Self::access_names(&self.names, value.as_ref(), true)
+        Self::access_names(&self.names, value.as_ref(), true).map(Cow::Borrowed)
     }
 }
 
@@ -257,6 +246,8 @@ impl<'a> Deserialize<'a> for VarAccess {
 mod tests {
     use std::sync::LazyLock;
 
+    use serde_json::json;
+
     use super::*;
 
     static TEST_VALUE_1: LazyLock<serde_json::Value> = LazyLock::new(|| {
@@ -294,7 +285,36 @@ mod tests {
     fn test_var_access() {
         let var_access = VarAccess::try_from("foo.bar[0].baz").unwrap();
         let result = var_access.access(&*TEST_VALUE_1).unwrap();
-        assert_eq!(result, Literal::Int(42));
+        assert_eq!(*result, json!(42));
+    }
+
+    #[test]
+    fn test_var_access_array() {
+        let var_access = VarAccess::try_from("foo.bar").unwrap();
+        let result = var_access.access(&*TEST_VALUE_1).unwrap();
+        assert_eq!(*result, json!([{"baz": 42}, {"baz": 43}]));
+    }
+
+    #[test]
+    fn test_var_access_object() {
+        let var_access = VarAccess::try_from("foo").unwrap();
+        let result = var_access.access(&*TEST_VALUE_1).unwrap();
+        assert_eq!(
+            *result,
+            json!({
+                "bar": [
+                    {"baz": 42},
+                    {"baz": 43}
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn test_var_access_null() {
+        let var_access = VarAccess::try_from("null_value").unwrap();
+        let result = var_access.access(&*TEST_VALUE_2).unwrap();
+        assert_eq!(*result, json!(null));
     }
 
     #[test]
@@ -306,10 +326,10 @@ mod tests {
 
         let var_access = VarAccess::try_from("test.foo.bar[1].baz").unwrap();
         let result = var_access.access_from_bindings(&env).unwrap();
-        assert_eq!(result, Literal::Int(43));
+        assert_eq!(*result, json!(43));
 
         let var_access = VarAccess::try_from("other.arr[1]").unwrap();
         let result = var_access.access_from_bindings(&env).unwrap();
-        assert_eq!(result, Literal::Int(2));
+        assert_eq!(*result, json!(2));
     }
 }

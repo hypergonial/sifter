@@ -1,12 +1,12 @@
 use std::{borrow::Cow, fmt::Debug};
 
 use crate::{
-    JsonValue,
+    JsonValue, VarAccessError,
     errors::EvalError,
     types::{Env, FunctionItem, VarAccess},
 };
 
-use super::types::{Exp, Literal};
+use super::types::{Exp, Value};
 
 #[derive(Debug, Clone, Copy)]
 enum Cmp {
@@ -17,8 +17,8 @@ enum Cmp {
 }
 
 fn expect_type<'a, 'b, T>(
-    value: &'b Literal<'a>,
-    extractor: impl Fn(&'b Literal<'a>) -> Option<&'b T>,
+    value: &'b Value<'a>,
+    extractor: impl Fn(&'b Value<'a>) -> Option<&'b T>,
     type_name: &str,
 ) -> Result<&'b T, EvalError> {
     extractor(value).ok_or_else(|| EvalError::TypeError {
@@ -26,11 +26,11 @@ fn expect_type<'a, 'b, T>(
     })
 }
 
-fn expect_bool(value: &Literal<'_>) -> Result<bool, EvalError> {
+fn expect_bool(value: &Value<'_>) -> Result<bool, EvalError> {
     expect_type(
         value,
         move |l| match l {
-            Literal::Bool(b) => Some(b),
+            Value::Bool(b) => Some(b),
             _ => None,
         },
         "a boolean",
@@ -40,29 +40,29 @@ fn expect_bool(value: &Literal<'_>) -> Result<bool, EvalError> {
 
 #[inline]
 #[expect(clippy::unnecessary_wraps)]
-const fn out(literal: Literal<'_>) -> Result<Cow<'_, Literal<'_>>, EvalError> {
-    Ok(Cow::Owned(literal))
+const fn out(value: Value<'_>) -> Result<Cow<'_, Value<'_>>, EvalError> {
+    Ok(Cow::Owned(value))
 }
 
 fn eval_neg<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp: &'a Exp<'a>,
     env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let value: bool = eval(exp, env)?.as_ref().into();
-    out(Literal::Bool(!value))
+    out(Value::Bool(!value))
 }
 
 fn eval_and<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     if bool::from(value1.as_ref()) {
         let value2 = eval(exp2, env)?;
         Ok(value2)
     } else {
-        out(Literal::Bool(false))
+        out(Value::Bool(false))
     }
 }
 
@@ -70,7 +70,7 @@ fn eval_or<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     if bool::from(value1.as_ref()) {
         Ok(value1)
@@ -84,20 +84,20 @@ fn eval_eq<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp,
     exp2: &'a Exp,
     env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     let value2 = eval(exp2, env)?;
 
-    Ok(Cow::Owned(Literal::Bool(value1 == value2)))
+    Ok(Cow::Owned(Value::Bool(value1 == value2)))
 }
 
 fn eval_neq<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp1: &'a Exp<'a>,
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let res = expect_bool(&*eval_eq(exp1, exp2, env)?)?;
-    out(Literal::Bool(!res))
+    out(Value::Bool(!res))
 }
 
 fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
@@ -105,18 +105,18 @@ fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     exp2: &'a Exp<'a>,
     env: &'b Env<'b, V>,
     cmp: Cmp,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let value1 = eval(exp1, env)?;
     let value2 = eval(exp2, env)?;
 
     match (value1.as_ref(), value2.as_ref()) {
-        (Literal::Int(i1), Literal::Int(i2)) => out(Literal::Bool(match cmp {
+        (Value::Int(i1), Value::Int(i2)) => out(Value::Bool(match cmp {
             Cmp::Lt => i1 < i2,
             Cmp::Gt => i1 > i2,
             Cmp::Leq => i1 <= i2,
             Cmp::Geq => i1 >= i2,
         })),
-        (Literal::Float(f1), Literal::Float(f2)) => out(Literal::Bool(match cmp {
+        (Value::Float(f1), Value::Float(f2)) => out(Value::Bool(match cmp {
             Cmp::Lt => f1 < f2,
             Cmp::Gt => f1 > f2,
             Cmp::Leq => f1 <= f2,
@@ -135,16 +135,19 @@ fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
 fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     var: &'a VarAccess,
     env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Literal<'c>>, EvalError> {
-    var.access_from_bindings(env)
-        .map_err(EvalError::VarAccess)
-        .map(Cow::Owned::<Literal<'c>>)
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
+    let obj = var
+        .access_from_bindings(env)
+        .map_err(EvalError::VarAccess)?;
+    let value = Value::from_json_object_cow(obj)
+        .map_err(|e| EvalError::VarAccess(VarAccessError::ConversionError { message: e }))?;
+    Ok(Cow::Owned(value))
 }
 
 fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     function: &'exp FunctionItem<'exp>,
     env: &'var Env<'var, V>,
-) -> Result<Cow<'out, Literal<'out>>, EvalError> {
+) -> Result<Cow<'out, Value<'out>>, EvalError> {
     let func = env
         .vtable()
         .get(function.name())
@@ -152,7 +155,7 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
             fn_name: function.name().to_string(),
         })?;
 
-    let args: Vec<Literal<'out>> = function
+    let args: Vec<Value<'out>> = function
         .args()
         .iter()
         .map(|arg| eval(arg, env))
@@ -167,9 +170,9 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
 pub(super) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     exp: &'exp Exp,
     env: &'var Env<'var, V>,
-) -> Result<Cow<'out, Literal<'out>>, EvalError> {
+) -> Result<Cow<'out, Value<'out>>, EvalError> {
     match exp {
-        Exp::Literal(literal) => Ok(Cow::Borrowed(literal)),
+        Exp::Literal(value) => Ok(Cow::Borrowed(value)),
         Exp::Var(var) => eval_varaccess(var, env),
         Exp::FnCall(function) => eval_fncall(function, env),
         Exp::Neg(exp) => eval_neg(exp, env),
@@ -216,66 +219,66 @@ mod tests {
             .build()
     });
 
-    static EXPS: LazyLock<[(&str, Result<Literal, EvalError>); 27]> = LazyLock::new(|| {
+    static EXPS: LazyLock<[(&str, Result<Value, EvalError>); 27]> = LazyLock::new(|| {
         [
             // Basic variable access
             (
                 r#"startsWith(y, "hel") && z && foo.bar > 100"#,
-                Ok(Literal::Bool(true)),
+                Ok(Value::Bool(true)),
             ),
             // Accessing nested properties and comparing to a literal
             (
                 r#"length(y) == 5 && foo.baz == "world""#,
-                Ok(Literal::Bool(true)),
+                Ok(Value::Bool(true)),
             ),
             // Regex match with anchors
             (
                 r#"matches(y, "^h.*o$") && foo.qux.nested[1] == 2"#,
-                Ok(Literal::Bool(true)),
+                Ok(Value::Bool(true)),
             ),
             // Literal false negated
-            ("!false", Ok(Literal::Bool(true))),
+            ("!false", Ok(Value::Bool(true))),
             // Truthy int (42) negated
-            ("!x", Ok(Literal::Bool(false))),
+            ("!x", Ok(Value::Bool(false))),
             // Truthy non-empty string negated
-            ("!y", Ok(Literal::Bool(false))),
+            ("!y", Ok(Value::Bool(false))),
             // Empty string is falsy — falls through to z
-            (r#""" || z"#, Ok(Literal::Bool(true))),
+            (r#""" || z"#, Ok(Value::Bool(true))),
             // Integer 0 is falsy — falls through to z
-            ("0 || z", Ok(Literal::Bool(true))),
+            ("0 || z", Ok(Value::Bool(true))),
             // && returns RHS value (not just bool) when LHS is truthy — JS-like semantics
-            ("z && x", Ok(Literal::Int(42))),
+            ("z && x", Ok(Value::Int(42))),
             // || returns first truthy value (LHS z, not RHS x)
-            ("z || x", Ok(Literal::Bool(true))),
+            ("z || x", Ok(Value::Bool(true))),
             // Short-circuit &&: false LHS skips evaluation of non-existent RHS variable
-            ("false && unknownVar", Ok(Literal::Bool(false))),
+            ("false && unknownVar", Ok(Value::Bool(false))),
             // Short-circuit ||: truthy LHS skips evaluation of non-existent RHS variable
-            ("z || unknownVar", Ok(Literal::Bool(true))),
+            ("z || unknownVar", Ok(Value::Bool(true))),
             // == with mismatched types returns false, not a TypeError
-            ("x == y", Ok(Literal::Bool(false))),
+            ("x == y", Ok(Value::Bool(false))),
             // != with mismatched types (int vs bool) returns true
-            ("x != z", Ok(Literal::Bool(true))),
+            ("x != z", Ok(Value::Bool(true))),
             // >= at the exact boundary
-            ("x >= 42", Ok(Literal::Bool(true))),
+            ("x >= 42", Ok(Value::Bool(true))),
             // <= at the exact boundary
-            ("x <= 42", Ok(Literal::Bool(true))),
+            ("x <= 42", Ok(Value::Bool(true))),
             // Array indexing: nested[0]=1 < nested[2]=3
             (
                 "foo.qux.nested[0] < foo.qux.nested[2]",
-                Ok(Literal::Bool(true)),
+                Ok(Value::Bool(true)),
             ),
             // endsWith function
-            (r#"endsWith(y, "lo")"#, Ok(Literal::Bool(true))),
+            (r#"endsWith(y, "lo")"#, Ok(Value::Bool(true))),
             // contains — substring present
-            (r#"contains(y, "ell")"#, Ok(Literal::Bool(true))),
+            (r#"contains(y, "ell")"#, Ok(Value::Bool(true))),
             // contains — substring absent
-            (r#"contains(y, "xyz")"#, Ok(Literal::Bool(false))),
+            (r#"contains(y, "xyz")"#, Ok(Value::Bool(false))),
             // ! applied directly to a function call
-            (r#"!matches(y, "^w")"#, Ok(Literal::Bool(true))),
+            (r#"!matches(y, "^w")"#, Ok(Value::Bool(true))),
             // String literal on the LHS of ==
-            (r#""hello" == y"#, Ok(Literal::Bool(true))),
+            (r#""hello" == y"#, Ok(Value::Bool(true))),
             // Both || operands are false — no short-circuit, result is false
-            ("false || false", Ok(Literal::Bool(false))),
+            ("false || false", Ok(Value::Bool(false))),
             (
                 "x > y",
                 Err(EvalError::TypeError {
@@ -319,59 +322,59 @@ mod tests {
 
     #[test]
     fn test_eval_literal() {
-        let exp = Exp::literal(Literal::Int(42));
+        let exp = Exp::literal(Value::Int(42));
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Int(42));
+        assert_eq!(result.into_owned(), Value::Int(42));
     }
 
     #[test]
     fn test_eval_var() {
         let exp = Exp::varname("x").unwrap();
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Int(42));
+        assert_eq!(result.into_owned(), Value::Int(42));
 
         let exp = Exp::varname("y").unwrap();
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::String("hello".into()));
+        assert_eq!(result.into_owned(), Value::String("hello".into()));
 
         let exp = Exp::varname("foo.qux.nested[1]").unwrap();
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Int(2));
+        assert_eq!(result.into_owned(), Value::Int(2));
     }
 
     #[test]
     fn test_eval_fncall() {
         let exp = Exp::fn_call(FunctionItem::new("length", [Exp::varname("y").unwrap()]));
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Int(5));
+        assert_eq!(result.into_owned(), Value::Int(5));
     }
 
     #[test]
     fn test_eval_neg() {
         let exp = Exp::neg(Exp::varname("z").unwrap());
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Bool(false));
+        assert_eq!(result.into_owned(), Value::Bool(false));
     }
 
     #[test]
     fn test_eval_and_or() {
         let exp = Exp::and(Exp::varname("z").unwrap(), Exp::varname("x").unwrap());
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Int(42));
+        assert_eq!(result.into_owned(), Value::Int(42));
 
         let exp = Exp::or(Exp::varname("z").unwrap(), Exp::varname("x").unwrap());
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Bool(true));
+        assert_eq!(result.into_owned(), Value::Bool(true));
     }
 
     #[test]
     fn test_eval_eq_neq() {
-        let exp = Exp::eq(Exp::varname("x").unwrap(), Exp::literal(Literal::Int(42)));
+        let exp = Exp::eq(Exp::varname("x").unwrap(), Exp::literal(Value::Int(42)));
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Bool(true));
+        assert_eq!(result.into_owned(), Value::Bool(true));
 
-        let exp = Exp::neq(Exp::varname("x").unwrap(), Exp::literal(Literal::Int(42)));
+        let exp = Exp::neq(Exp::varname("x").unwrap(), Exp::literal(Value::Int(42)));
         let result = eval(&exp, &ENV).unwrap();
-        assert_eq!(result.into_owned(), Literal::Bool(false));
+        assert_eq!(result.into_owned(), Value::Bool(false));
     }
 }

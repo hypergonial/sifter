@@ -9,14 +9,14 @@ use crate::{
     Env, JsonValue, ParseError,
     errors::EvalError,
     parser::parse_exp,
-    types::{func::FunctionItem, literal::Literal, var::VarAccess},
+    types::{func::FunctionItem, value::Value, var::VarAccess},
 };
 
 /// Represents an Abstract Syntax Tree (AST) for sosaku expressions,
 /// which can be evaluated in a given environment to produce a literal value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Exp<'a> {
-    Literal(Literal<'a>),
+    Literal(Value<'a>),
     FnCall(FunctionItem<'a>),
     Var(VarAccess),
     Neg(Box<Self>),
@@ -103,7 +103,7 @@ impl<'exp> Exp<'exp> {
     pub fn eval<'var, 'out, V: JsonValue + Clone + Debug>(
         &'exp self,
         env: &'var Env<'var, V>,
-    ) -> Result<Cow<'out, Literal<'out>>, EvalError>
+    ) -> Result<Cow<'out, Value<'out>>, EvalError>
     where
         'exp: 'out,
         'var: 'out,
@@ -121,7 +121,7 @@ impl<'exp> Exp<'exp> {
     ///
     /// - An [`Exp`] enum representing the literal value.
     #[inline]
-    pub const fn literal(lit: Literal<'exp>) -> Self {
+    pub const fn literal(lit: Value<'exp>) -> Self {
         Self::Literal(lit)
     }
 
