@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use pyo3::{PyResult, exceptions::PyValueError, pyclass, pymethods};
 use sosaku::VarAccess;
 
-use crate::py_types::jsonobj::PyJsonValue;
+use crate::{errors::PySosakuError, py_types::jsonobj::PyJsonValue};
 
 #[pyclass(from_py_object, eq, frozen, hash, name = "VarAccess")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -51,7 +51,7 @@ impl PyVarAccess {
         Ok(self
             .inner
             .access(&value)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .map_err(|e| PySosakuError::from(sosaku::EvalError::from(e)))?
             .clone())
     }
 
@@ -76,7 +76,7 @@ impl PyVarAccess {
         Ok(self
             .inner
             .access_from_bindings(&sosaku::Env::new().bind_multiple(bindings).build())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .map_err(|e| PySosakuError::from(sosaku::EvalError::from(e)))?
             .into_owned())
     }
 }

@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 
+pub mod errors;
 pub mod py_types;
 
 #[pymodule]

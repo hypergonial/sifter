@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use pyo3::{PyResult, exceptions::PyValueError, pyclass, pymethods};
+use pyo3::{PyResult, pyclass, pymethods};
 use sosaku::Exp;
 
-use crate::py_types::jsonobj::PyJsonValue;
+use crate::{errors::PySosakuError, py_types::jsonobj::PyJsonValue};
 
 #[pyclass(from_py_object, eq, frozen, name = "Exp")]
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +25,7 @@ impl PyExp {
     pub fn new(exp: &str) -> PyResult<Self> {
         Ok(Self {
             inner: Exp::try_from(exp)
-                .map_err(|e| PyValueError::new_err(e.to_string()))?
+                .map_err(PySosakuError::from)?
                 .into_owned(),
         })
     }
@@ -47,7 +47,7 @@ impl PyExp {
         Ok(self
             .inner
             .eval(&sosaku::Env::new().bind_multiple(bindings).build())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .map_err(PySosakuError::from)?
             .into_owned()
             .into())
     }
