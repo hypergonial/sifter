@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{JsonMap, JsonValue, utils::escape_str_for_json};
 
-/// A type of a literal value.
+/// The type of a literal value. This can be obtained using the [`Value::type_name`] method on a [`Value`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
     /// An integer value (base 10, signed 64-bit integer).
@@ -200,7 +200,7 @@ impl Value<'_> {
 }
 
 impl Value<'_> {
-    /// The type of the literal value.
+    /// The type of the value.
     pub const fn type_name(&self) -> Type {
         match self {
             Self::Int(_) => Type::Integer,

@@ -269,3 +269,20 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
         }
     }
 }
+
+impl<K, V, I> From<I> for Env<'_, V>
+where
+    K: Into<Box<str>>,
+    V: JsonValue + Clone + Debug,
+    I: IntoIterator<Item = (K, V)>,
+{
+    fn from(value: I) -> Self {
+        Env {
+            bindings: value
+                .into_iter()
+                .map(|(k, v)| (k.into(), Cow::Owned(v)))
+                .collect(),
+            vtable: DEFAULT_VTABLE.clone(),
+        }
+    }
+}
