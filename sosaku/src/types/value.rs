@@ -7,7 +7,7 @@ use std::{
 #[cfg(feature = "serde")]
 use serde::Deserialize;
 
-use crate::{JsonMap, types::json::JsonValue, utils::escape_str_for_json};
+use crate::{JsonMap, JsonValue, utils::escape_str_for_json};
 
 /// A type of a literal value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,7 +56,7 @@ impl Display for Type {
 /// which allows for efficient handling of JSON values without unnecessary cloning.
 ///
 /// To obtain a fully owned version of a [`Value`], you can use the [`Value::into_owned`] method,
-/// which will clone any borrowed data into owned data and return a new [`Value`] with a `'static` lifetime.
+/// which will clone any borrowed data and return a new [`Value`] with a `'static` lifetime.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a> {
     /// An integer value (base 10, signed 64-bit integer).
@@ -78,7 +78,8 @@ pub enum Value<'a> {
 }
 
 impl Value<'_> {
-    /// Convert this [`Value`] into an owned version, where all borrowed data is cloned into owned data.
+    /// Convert this [`Value`] into an owned version,
+    /// all borrowed data will be cloned and the resulting [`Value`] will have a `'static` lifetime.
     ///
     /// This is useful for cases where you want to take ownership of a [`Value`] that may contain
     /// borrowed data (e.g. from a JSON value) and ensure that it is fully owned and independent of any original data sources.
