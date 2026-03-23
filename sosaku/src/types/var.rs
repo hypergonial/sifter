@@ -94,20 +94,46 @@ impl VarAccess {
         ignore_first: bool,
     ) -> Result<&'a V, VarAccessError> {
         let mut current = value;
-
-        let var = names.last().ok_or(VarAccessError::EmptyAccess)?;
+        let mut root = None;
 
         if ignore_first {
+            root = names.first().map_or_else(|| None, |v| Some(v.name()));
             names = names.get(1..).ok_or(VarAccessError::EmptyAccess)?;
         }
 
+        // Join the previous variable names to indicate the
+        // path to the current object being accessed, for better error messages
+        let resolve_obj_name = |i: usize| {
+            if i == 0 {
+                root.unwrap_or("<root>").to_string()
+            } else {
+                let names = names[..i]
+                    .iter()
+                    .map(|v| {
+                        if let Some(index) = v.index() {
+                            format!("{}[{}]", v.name(), index)
+                        } else {
+                            v.name().to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(r) = root {
+                    format!("{}.{}", r, names.join("."))
+                } else {
+                    names.join(".")
+                }
+            }
+        };
+
         // Reduce "current" by accessing each variable name in the access path
-        for var in names {
+        for (i, var) in names.iter().enumerate() {
             if let Some(o) = current.as_object() {
                 current = o
                     .get(var.name())
-                    .ok_or_else(|| VarAccessError::VariableNotFound {
-                        variable: var.name().to_string(),
+                    .ok_or_else(|| VarAccessError::ObjectKeyError {
+                        object: resolve_obj_name(i),
+                        key: var.name().to_string(),
                     })?;
 
                 if let Some(index) = var.index() {
@@ -115,8 +141,8 @@ impl VarAccess {
                         .as_array()
                         .ok_or_else(|| VarAccessError::TypeError {
                             message: format!(
-                                "Expected array at '{}', received {:?}",
-                                var.name(),
+                                "Expected array at '{}', found {:?}",
+                                resolve_obj_name(i),
                                 current
                             ),
                         })?;
@@ -126,36 +152,24 @@ impl VarAccess {
                         .ok_or_else(|| VarAccessError::IndexOutOfBounds {
                             message: format!(
                                 "Index out of bounds at '{}' (index: {index} length: {})",
-                                var.name(),
+                                resolve_obj_name(i),
                                 arr.len()
                             ),
                         })?;
                 }
+            } else {
+                return Err(VarAccessError::TypeError {
+                    message: format!(
+                        "Expected object at '{}', found {:?}, cannot access '{}'",
+                        resolve_obj_name(i),
+                        current,
+                        var.name()
+                    ),
+                });
             }
         }
 
-        match current {
-            v if v.is_array() && var.index().is_none() => Ok(v),
-            v if v.is_array() && var.index.is_some() => {
-                let index = var.index().ok_or_else(|| VarAccessError::ConversionError {
-                    message: format!("Expected array index for '{}'", var.name()),
-                })?;
-                let arr = v.as_array().expect("Value should be array");
-
-                let value = arr
-                    .get(index)
-                    .ok_or_else(|| VarAccessError::IndexOutOfBounds {
-                        message: format!(
-                            "Index out of bounds at '{}' (index: {index} length: {})",
-                            var.name(),
-                            arr.len()
-                        ),
-                    })?;
-
-                Ok(value)
-            }
-            v => Ok(v),
-        }
+        Ok(current)
     }
 
     /// Access the value denoted by this accessor from the given JSON value.
@@ -331,5 +345,23 @@ mod tests {
         let var_access = VarAccess::try_from("other.arr[1]").unwrap();
         let result = var_access.access_from_bindings(&env).unwrap();
         assert_eq!(*result, json!(2));
+    }
+
+    #[test]
+    fn test_var_access_errors() {
+        let var_access = VarAccess::try_from("foo.bar[2].baz").unwrap();
+        let result = var_access.access(&*TEST_VALUE_1);
+        assert!(matches!(
+            result,
+            Err(VarAccessError::IndexOutOfBounds { .. })
+        ));
+
+        let var_access = VarAccess::try_from("foo.baz").unwrap();
+        let result = var_access.access(&*TEST_VALUE_1);
+        assert!(matches!(result, Err(VarAccessError::ObjectKeyError { .. })));
+
+        let var_access = VarAccess::try_from("foo.bar[0].baz.qux").unwrap();
+        let result = var_access.access(&*TEST_VALUE_1);
+        assert!(matches!(result, Err(VarAccessError::TypeError { .. })));
     }
 }

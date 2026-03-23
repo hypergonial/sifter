@@ -81,7 +81,10 @@ fn string_binary<'a>(
             return Err(FnCallError {
                 fn_name: fn_name.to_string(),
                 reason: EvalError::TypeError {
-                    message: format!("Expected a string as the first argument, got {v1:?}"),
+                    message: format!(
+                        "Expected a string as the first argument, got: '{}'",
+                        v1.type_name()
+                    ),
                 }
                 .into(),
             });
@@ -90,7 +93,10 @@ fn string_binary<'a>(
             return Err(FnCallError {
                 fn_name: fn_name.to_string(),
                 reason: EvalError::TypeError {
-                    message: format!("Expected a string as the second argument, got {v2:?}"),
+                    message: format!(
+                        "Expected a string as the second argument, got: '{}'",
+                        v2.type_name()
+                    ),
                 }
                 .into(),
             });
@@ -106,11 +112,14 @@ fn len(args: FnArgs<'_>) -> FnResult<'_> {
             Value::String(s) => s.chars().count(),
             Value::Array(arr) => arr.len(),
             Value::Object(obj) => obj.len(),
-            _ => {
+            v => {
                 return Err(FnCallError {
                     fn_name: "len".to_string(),
                     reason: EvalError::TypeError {
-                        message: "Expected a string, array, or object".to_string(),
+                        message: format!(
+                            "Expected a string, array, or object, got: '{}'",
+                            v.type_name()
+                        ),
                     }
                     .into(),
                 });
@@ -133,18 +142,19 @@ fn ends_with(args: FnArgs<'_>) -> FnResult<'_> {
 }
 
 fn contains(args: FnArgs<'_>) -> FnResult<'_> {
-    binary("contains", args, |v1, v2| match (v1, v2) {
+    binary("contains", args, |v1, v2| {
+        match (v1, v2) {
         (Value::String(s), Value::String(sub)) => Ok(Value::Bool(s.contains(sub.as_ref()))),
         (Value::Array(arr), item) => Ok(Value::Bool(arr.iter().any(|e| e == item))),
         (Value::Object(obj), Value::String(key)) => Ok(Value::Bool(obj.contains_key(key.as_ref()))),
         _ => Err(FnCallError {
             fn_name: "contains".to_string(),
             reason: EvalError::TypeError {
-                message: "Expected (string, string), (array, value), or (object, string) arguments"
-                    .to_string(),
+                message: format!("Expected (string, string), (array, value), or (object, string) arguments, got: ('{}', '{}')", v1.type_name(), v2.type_name()),
             }
             .into(),
         }),
+    }
     })
 }
 
@@ -153,7 +163,7 @@ fn matches(args: FnArgs<'_>) -> FnResult<'_> {
         let re = regex::Regex::new(pattern).map_err(|e| FnCallError {
             fn_name: "matches".to_string(),
             reason: EvalError::RegexError {
-                message: format!("Invalid regex pattern: {e}"),
+                message: format!("Invalid regex pattern: '{e}'"),
             }
             .into(),
         })?;

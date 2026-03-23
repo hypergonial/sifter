@@ -17,6 +17,8 @@ pub enum VarAccessError {
     EmptyAccess,
     #[error("Variable not found: {variable}")]
     VariableNotFound { variable: String },
+    #[error("Object '{object}' does not contain key '{key}'")]
+    ObjectKeyError { object: String, key: String },
     #[error("Type error: {message}")]
     TypeError { message: String },
     #[error("Index out of bounds: {message}")]
