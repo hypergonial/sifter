@@ -9,11 +9,11 @@ DSL for filtering JSON, for the individual components, see the following:
 ## Short Example
 
 ```json
-test = {"var": 5, "var2": "hello world", "nested": {"var3": [1,2,3]}}
+{"var": 5, "var2": "hello world", "nested": {"var3": [1,2,3]}}
 ```
 
 ```txt
-test.var == 5 && startsWith(test.var2, 'hello') && test.nested.var3[1] == 2
+input.var == 5 && startsWith(input.var2, 'hello') && input.nested.var3[1] == 2
 ```
 
 Returns: `true`
