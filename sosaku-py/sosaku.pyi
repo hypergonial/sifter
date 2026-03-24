@@ -26,11 +26,6 @@ class Exp:
         ----------
         exp : str
             The expression string. It should be a valid expression.
-
-        Raises
-        ------
-        ValueError
-            If the expression string is not valid.
         """
 
     def eval(self, bindings: typing.Mapping[str, JSONValue]) -> JSONValue:
@@ -72,11 +67,6 @@ class VarAccess:
         -------
         JSONValue
             The accessed value.
-
-        Raises
-        ------
-        ValueError
-            If the accessor tries to access a key that does not exist in a JSON object.
         """
 
     def access_bindings(self, bindings: typing.Mapping[str, JSONValue]) -> JSONValue:
@@ -91,9 +81,4 @@ class VarAccess:
         -------
         JSONValue
             The accessed value.
-
-        Raises
-        ------
-        ValueError
-            If the accessor tries to access a key that does not exist in the bindings.
         """
