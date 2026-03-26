@@ -129,6 +129,7 @@ jobs:
         if: matrix.os != 'windows-latest'
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
+          ls -la target
           mkdir target/stage
           tar czvf target/stage/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
 
