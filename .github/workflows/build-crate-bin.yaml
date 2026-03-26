@@ -24,7 +24,7 @@ on:
 jobs:
   # Build sources for every OS
   github_build:
-    name: Build release binaries
+    name: Build release binary (${{ matrix.target }})
     strategy:
       fail-fast: false
       matrix:
