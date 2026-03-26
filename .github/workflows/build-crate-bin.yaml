@@ -84,7 +84,7 @@ jobs:
         run: |
           binary_path=$(jq -r 'first(select(.reason == "compiler-artifact" and .executable != null and .profile.test == false) | .executable)' build_log.json)
 
-          if [ -z "$binary_path" || $binary_path == "null" ]; then
+          if [[ -z "$binary_path" || $binary_path == "null" ]]; then
             echo "No binary path found in build log"
             exit 1
           fi
