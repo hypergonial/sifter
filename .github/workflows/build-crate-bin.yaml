@@ -75,22 +75,37 @@ jobs:
 
       - name: "Post Setup | Extract binary path"
         id: binary_path
-        shell: bash
+        shell: python
         working-directory: ${{ inputs.working-directory }}
         run: |
-          cat build_log.json
+          import json
+          import os
 
-          binary_path=$(jq -r 'first(select(.reason == "compiler-artifact" and .executable != null and .profile.test == false) | .executable)' build_log.json)
+          binary_path = None
 
-          if [[ -z "$binary_path" || $binary_path == "null" ]]; then
-            echo "No binary path found in build log"
-            exit 1
-          fi
+          with open("build_log.json", "r") as f:
+              for line in f:
+                  try:
+                      msg = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
 
-          echo "Located binary path: $binary_path"
+                  reason = msg.get("reason")
+                  executable = msg.get("executable")
+                  is_test = msg.get("profile", {}).get("test", False)
 
-          echo "binary_path=$binary_path" >> $GITHUB_OUTPUT
-          echo "binary_dir=$(dirname "$binary_path")" >> $GITHUB_OUTPUT
+                  if reason == "compiler-artifact" and executable and not is_test:
+                      binary_path = msg["executable"]
+                      break
+              else:
+                  print("No binary path found in build log")
+                  exit(1)
+
+          print(f"Located binary path: {binary_path}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"binary_path={binary_path}\n")
+              f.write(f"binary_dir={os.path.dirname(binary_path)}\n")
 
       - name: "Post Setup | Get workspace folder"
         id: workspace_folder
@@ -106,6 +121,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
+          ls -la target
           mkdir target/stage
           7z a target/stage/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
 
