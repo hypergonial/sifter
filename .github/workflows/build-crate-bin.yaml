@@ -63,40 +63,76 @@ jobs:
       - name: Build | Build
         if: ${{ !endsWith(matrix.target, '-unknown-linux-musl') }}
         working-directory: ${{ inputs.working-directory }}
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --message-format json > build_log.json
 
       - name: Build | Build (musl)
         if: endsWith(matrix.target, '-unknown-linux-musl')
         working-directory: ${{ inputs.working-directory }}
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target ${{ matrix.target }} --message-format json > build_log.json
 
       - name: "Post Setup | Extract tag name"
+        id: extract_tag
         shell: bash
         run: |
           tag=$(echo ${GITHUB_REF#refs/tags/})
           echo "tag=$tag" >> $GITHUB_OUTPUT
-        id: extract_tag
+
+      - name: "Post Setup | Extract binary path"
+        id: binary_path
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          binary_path=$(
+            jq -r '
+              first(
+                select(
+                  .reason == "compiler-artifact"
+                  and .executable != null
+                  and .profile.test == false
+                )
+                | .executable
+              )
+            ' build_log.json
+          )
+
+          if [ -z "$binary_path" || $binary_path == "null" ]; then
+            echo "No binary path found in build log"
+            exit 1
+          fi
+
+          echo "Located binary path: $binary_path"
+
+          echo "binary_path=$binary_path" >> $GITHUB_OUTPUT
+          echo "binary_dir=$(dirname "$binary_path")" >> $GITHUB_OUTPUT
+
+      - name: "Post Setup | Get workspace folder"
+        id: workspace_folder
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          workspace_manifest=$(cargo locate-project --workspace --message-format plain)
+          workspace_folder=$(dirname "$workspace_manifest")
+          echo "Located workspace folder: $workspace_folder"
+          echo "workspace_folder=$workspace_folder" >> $GITHUB_OUTPUT
 
       - name: Post Setup | Prepare artifacts [Windows]
         if: matrix.os == 'windows-latest'
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
           mkdir target/stage
-          cd target/${{ matrix.target }}/release
-          7z a ../../stage/${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ inputs.crate-name }}.exe
-          cd -
+          7z a target/stage/${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+
       - name: Post Setup | Prepare artifacts [-nix]
         if: matrix.os != 'windows-latest'
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
           mkdir target/stage
-          cd target/${{ matrix.target }}/release
-          tar czvf ../../stage/${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ inputs.crate-name }}
-          cd -
+          tar czvf target/stage/${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+
       - name: Post Setup | Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }}
-          path: ${{ inputs.working-directory }}/target/stage/*
+          path: ${{ steps.workspace_folder.outputs.workspace_folder }}/target/stage/*
           overwrite: true
           retention-days: 1

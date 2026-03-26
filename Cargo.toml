@@ -6,7 +6,7 @@ members = ["sosaku", "sosaku-cli", "sosaku-py"]
 authors = ["hypergonial"]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.93"
+rust-version = "1.92"
 license = "MIT"
 
 [workspace.lints.rust]
