@@ -50,7 +50,6 @@ jobs:
         run: |
           if [ "${{ matrix.crate.is_python }}" = "true" ]; then
               uv sync --dev
-              uv run maturin develop
           else
               cargo build --verbose
           fi
