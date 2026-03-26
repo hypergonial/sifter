@@ -1,6 +1,6 @@
 # Based on https://github.com/tommilligan/mdbook-admonish/blob/main/.github/workflows/deploy.yml
 
-name: Deploy
+name: Release
 on:
   push:
     tags:
