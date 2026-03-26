@@ -20,6 +20,8 @@ jobs:
   init:
     name: Bump project version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.parse_version.outputs.version }}
       major: ${{ steps.parse_version.outputs.major }}
