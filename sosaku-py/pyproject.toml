@@ -1,13 +1,92 @@
-[build-system]
-requires = ["maturin>=1.12,<2.0"]
-build-backend = "maturin"
-
 [project]
 name = "sosaku-py"
 requires-python = ">=3.10"
+dynamic = ["version"]
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "hypergonial", email = "git@hypergonial.com" }]
+maintainers = [{ name = "hypergonial", email = "git@hypergonial.com" }]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries",
+    "Natural Language :: English",
 ]
-dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/hypergonial/sosaku"
+Repository = "https://github.com/hypergonial/sosaku"
+Issues = "https://github.com/hypergonial/sosaku/issues"
+
+[dependency-groups]
+dev = [
+    "nox>=2026.2.9",
+    "pyright==1.1.408",
+    "pytest>=9.0",
+    "ruff>=0.15",
+    "uv>=0.11",
+    "maturin>=1.12,<2.0",
+]
+
+[tool.ruff]
+exclude = ["examples", "docs", "build"]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "TCH",
+    "C",
+    "N",
+    "D2",
+    "D3",
+    "D415",
+    "D417",
+    "D418",
+    "D419",
+    "ASYNC",
+    "Q",
+    "RSE",
+    "SIM",
+    "RUF",
+]
+ignore = ["F405", "F403", "E501", "D205"]
+fixable = ["I", "TCH", "D", "RUF"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.mypy]
+ignore_errors = true
+
+[tool.uv]
+required-version = ">=0.11"
+
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+reportPrivateUsage = false
+reportMissingTypeStubs = true
+reportUnnecessaryTypeIgnoreComment = "warning"
+reportUninitializedInstanceVariable = "error"
+reportShadowedImports = "warning"
+
+[build-system]
+requires = ["maturin>=1.12,<2.0"]
+build-backend = "maturin"

@@ -415,7 +415,7 @@ fn parse_atom(input: &str) -> IResult<&str, Exp<'_>> {
 /// Parse a negation (prefix unary !) operator
 fn parse_neg(input: &str) -> IResult<&str, Exp<'_>> {
     // Try reading a negation operator
-    let Ok((input, _)): IResult<&str, &str> = tag("!")(input) else {
+    let Ok((input, _)): IResult<&str, &str> = ws(tag("!")).parse(input) else {
         return parse_atom(input);
     };
     // If successful, wrap the resulting expression in a negation
@@ -453,7 +453,7 @@ fn parse_or(input: &str) -> IResult<&str, Exp<'_>> {
 }
 
 pub(super) fn parse_exp(input: &str) -> IResult<&str, Exp<'_>> {
-    parse_or(input)
+    parse_or(input.trim_start())
 }
 
 #[cfg(test)]
@@ -571,6 +571,35 @@ mod tests {
             Ok((
                 "",
                 Exp::leq(Exp::literal(Value::Int(123)), Exp::literal(Value::Int(456)))
+            ))
+        );
+    }
+
+    #[test]
+    fn test_whitespace() {
+        assert_eq!(
+            parse_exp("\n\n   \r\n123   "),
+            Ok(("", Exp::literal(Value::Int(123))))
+        );
+        assert_eq!(
+            parse_exp("\n\n   \r\n!   123   \n\n   "),
+            Ok(("", Exp::neg(Exp::literal(Value::Int(123)))))
+        );
+        assert_eq!(
+            parse_exp("\n\n   \r\n123   >   456   \n\n   "),
+            Ok((
+                "",
+                Exp::gt(Exp::literal(Value::Int(123)), Exp::literal(Value::Int(456)))
+            ))
+        );
+        assert_eq!(
+            parse_exp("\n     len(y) == 5"),
+            Ok((
+                "",
+                Exp::eq(
+                    Exp::fn_call(FunctionItem::new("len", vec![Exp::varname("y").unwrap()])),
+                    Exp::literal(Value::Int(5))
+                )
             ))
         );
     }

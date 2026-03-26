@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nom",
  "regex",
@@ -325,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku-py"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pyo3",
  "sosaku",

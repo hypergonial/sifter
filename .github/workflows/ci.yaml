@@ -23,7 +23,11 @@ jobs:
       matrix:
         crate:
           - name: sosaku
+            is_python: false
           - name: sosaku-cli
+            is_python: false
+          - name: sosaku-py
+            is_python: true
     steps:
       - name: Setup | Checkout Repository
         uses: actions/checkout@v6
@@ -34,13 +38,31 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        if: matrix.crate.is_python == true
+        with:
+          version: "0.11"
+          python-version: "3.10"
+
       - name: Build | Compile Project
         working-directory: ./${{ matrix.crate.name }}
-        run: cargo build --verbose
+        run: |
+          if [ "${{ matrix.crate.is_python }}" = "true" ]; then
+              uv sync --dev
+              uv run maturin develop
+          else
+              cargo build --verbose
+          fi
 
       - name: Run | Tests
         working-directory: ./${{ matrix.crate.name }}
-        run: cargo test --verbose
+        run: |
+          if [ "${{ matrix.crate.is_python }}" = "true" ]; then
+              uv run pytest tests -v
+          else
+              cargo test --verbose
+          fi
 
   clippy:
     runs-on: ubuntu-latest

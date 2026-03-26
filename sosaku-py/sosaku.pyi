@@ -1,16 +1,8 @@
 import typing
 
-__all__: typing.Sequence[str] = ("Exp", "VarAccess", "JSONValue")
+__all__: typing.Sequence[str] = ("Exp", "JSONValue", "VarAccess")
 
-JSONValue = (
-    int
-    | float
-    | str
-    | bool
-    | None
-    | typing.Sequence["JSONValue"]
-    | typing.Mapping[str, "JSONValue"]
-)
+JSONValue = int | float | str | bool | None | typing.Sequence["JSONValue"] | typing.Mapping[str, "JSONValue"]
 """Represents a valid JSON value."""
 
 class Exp:
