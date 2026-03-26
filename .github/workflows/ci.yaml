@@ -49,7 +49,7 @@ jobs:
         working-directory: ./${{ matrix.crate.name }}
         run: |
           if [ "${{ matrix.crate.is_python }}" = "true" ]; then
-              uv sync --dev
+              uv sync --dev --verbose
           else
               cargo build --verbose
           fi
