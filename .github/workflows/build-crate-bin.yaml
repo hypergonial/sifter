@@ -73,15 +73,30 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: cross build --release --target ${{ matrix.target }} --message-format json > build_log.json
 
+      - name: "Post Setup | Get workspace folder"
+        id: workspace_folder
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          workspace_manifest=$(cargo locate-project --workspace --message-format plain)
+          workspace_folder=$(dirname "$workspace_manifest")
+          echo "Located workspace folder: $workspace_folder"
+          echo "workspace_folder=$workspace_folder" >> $GITHUB_OUTPUT
+
       - name: "Post Setup | Extract binary path"
         id: binary_path
         shell: python
         working-directory: ${{ inputs.working-directory }}
+        env:
+          IS_CROSS: ${{ endsWith(matrix.target, '-unknown-linux-musl') }}
+          WORKSPACE_FOLDER: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
           import json
           import os
 
           binary_path = None
+          is_cross = os.environ["IS_CROSS"] == "true"
+          workspace_folder = os.environ["WORKSPACE_FOLDER"]
 
           with open("build_log.json", "r") as f:
               for line in f:
@@ -101,42 +116,35 @@ jobs:
                   print("No binary path found in build log")
                   exit(1)
 
-          print(f"Located binary path: {binary_path}")
+          # Stuff compiled in cross is compiled in a container and the target folder is at root
+          if is_cross:
+              print(f"Cross-compilation detected, adjusting binary path for cross")
+              binary_path = workspace_folder.removesuffix("/") + "/" + binary_path.removeprefix("target/")
+
+          print(f"Resolved binary path: {binary_path}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"binary_path={binary_path}\n")
               f.write(f"binary_dir={os.path.dirname(binary_path)}\n")
 
-      - name: "Post Setup | Get workspace folder"
-        id: workspace_folder
-        shell: bash
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          workspace_manifest=$(cargo locate-project --workspace --message-format plain)
-          workspace_folder=$(dirname "$workspace_manifest")
-          echo "Located workspace folder: $workspace_folder"
-          echo "workspace_folder=$workspace_folder" >> $GITHUB_OUTPUT
-
       - name: Post Setup | Prepare artifacts [Windows]
         if: matrix.os == 'windows-latest'
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
-          ls -la target
-          mkdir target/stage
-          7z a target/stage/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+          mkdir target/artifacts
+          7z a target/artifacts/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
 
       - name: Post Setup | Prepare artifacts [-nix]
         if: matrix.os != 'windows-latest'
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
-          ls -la target
-          mkdir target/stage
-          tar czvf target/stage/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+          mkdir target/artifacts
+          tar czvf target/artifacts/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
 
       - name: Post Setup | Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }}
-          path: ${{ steps.workspace_folder.outputs.workspace_folder }}/target/stage/*
+          path: ${{ steps.workspace_folder.outputs.workspace_folder }}/target/artifacts/*
           overwrite: true
           retention-days: 1
