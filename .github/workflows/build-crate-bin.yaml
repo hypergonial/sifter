@@ -6,6 +6,9 @@ on:
       crate-name:
         required: true
         type: string
+      version:
+        required: true
+        type: string
       working-directory:
         required: false
         type: string
@@ -68,22 +71,15 @@ jobs:
       - name: Build | Build (musl)
         if: endsWith(matrix.target, '-unknown-linux-musl')
         working-directory: ${{ inputs.working-directory }}
-        run: |
-          cross build --release --target ${{ matrix.target }}
-          exit 1
-
-      - name: "Post Setup | Extract tag name"
-        id: extract_tag
-        shell: bash
-        run: |
-          tag=$(echo ${GITHUB_REF#refs/tags/})
-          echo "tag=$tag" >> $GITHUB_OUTPUT
+        run: cross build --release --target ${{ matrix.target }} --message-format json > build_log.json
 
       - name: "Post Setup | Extract binary path"
         id: binary_path
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         run: |
+          cat build_log.json
+
           binary_path=$(jq -r 'first(select(.reason == "compiler-artifact" and .executable != null and .profile.test == false) | .executable)' build_log.json)
 
           if [[ -z "$binary_path" || $binary_path == "null" ]]; then
@@ -111,19 +107,19 @@ jobs:
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
           mkdir target/stage
-          7z a target/stage/${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+          7z a target/stage/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
 
       - name: Post Setup | Prepare artifacts [-nix]
         if: matrix.os != 'windows-latest'
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         run: |
           mkdir target/stage
-          tar czvf target/stage/${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+          tar czvf target/stage/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
 
       - name: Post Setup | Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.crate-name }}-${{ steps.extract_tag.outputs.tag }}-${{ matrix.name }}
+          name: ${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }}
           path: ${{ steps.workspace_folder.outputs.workspace_folder }}/target/stage/*
           overwrite: true
           retention-days: 1

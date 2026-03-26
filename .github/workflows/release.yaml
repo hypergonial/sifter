@@ -116,6 +116,7 @@ jobs:
           - "sosaku-cli"
     with:
       crate-name: ${{ matrix.crate }}
+      version: ${{ needs.init.outputs.version }}
       working-directory: ${{ matrix.crate }}
       ref: ${{ github.event.repository.default_branch }}
 
