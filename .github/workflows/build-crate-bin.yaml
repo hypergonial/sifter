@@ -68,7 +68,9 @@ jobs:
       - name: Build | Build (musl)
         if: endsWith(matrix.target, '-unknown-linux-musl')
         working-directory: ${{ inputs.working-directory }}
-        run: cross build --release --target ${{ matrix.target }} --message-format json > build_log.json
+        run: |
+          cross build --release --target ${{ matrix.target }}
+          exit 1
 
       - name: "Post Setup | Extract tag name"
         id: extract_tag
