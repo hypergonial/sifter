@@ -4,18 +4,16 @@ A crate for evaluating expressions against a set of bindings. It supports a vari
 
 ## Installation
 
-Add the following to your `Cargo.toml`:
+Add the crate to your project:
 
-```toml
-[dependencies]
-sosaku = { git = "https://github.com/hypergonial/sosaku.git", branch = "main" }
+```bash
+cargo add sosaku
 ```
 
 If you need `serde`/`serde_json` support, enable the `serde` feature:
 
-```toml
-[dependencies]
-sosaku = { git = "https://github.com/hypergonial/sosaku.git", branch = "main", features = ["serde"] }
+```bash
+cargo add sosaku --features serde
 ```
 
 ## Example Usage

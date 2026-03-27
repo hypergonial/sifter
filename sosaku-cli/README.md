@@ -5,7 +5,7 @@ A command-line interface for sosaku.
 ## Installation
 
 ```bash
-cargo install --path .
+cargo install sosaku-cli
 ```
 
 ## Example Usage

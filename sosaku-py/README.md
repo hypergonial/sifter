@@ -1,11 +1,11 @@
-# sosaku-py
+# sosaku
 
-Python bindings for sosaku.
+Python bindings for [sosaku](https://github.com/hypergonial/sosaku).
 
 ## Installation
 
 ```bash
-pip install .
+pip install sosaku
 ```
 
 Or in a `pyproject.toml`:
@@ -13,8 +13,14 @@ Or in a `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "sosaku-py @ git+https://github.com/hypergonial/sosaku.git@main#subdirectory=sosaku-py"
+    "sosaku>=0.1.0"
 ]
+```
+
+Or in a `requirements.txt`:
+
+```txt
+sosaku-py>=0.1.0
 ```
 
 ## Usage
