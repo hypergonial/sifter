@@ -133,6 +133,7 @@ jobs:
     uses: ./.github/workflows/build-py-wheel.yaml
     strategy:
       fail-fast: true
+      max-parallel: 10
       matrix:
         package:
           - "sosaku-py"
