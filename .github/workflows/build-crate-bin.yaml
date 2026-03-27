@@ -26,7 +26,7 @@ jobs:
   github_build:
     name: Build release binary (${{ matrix.target }})
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - target: aarch64-unknown-linux-musl
