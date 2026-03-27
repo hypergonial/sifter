@@ -5,7 +5,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Querying JSON data from the command line"
+homepage.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "CLI for the sosaku JSON Query language"
 
 [lints]
 workspace = true

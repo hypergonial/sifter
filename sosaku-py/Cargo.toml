@@ -5,7 +5,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Python bindings for a JSON Query language"
+homepage.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "Python bindings for the sosaku JSON Query language"
 
 [lints]
 workspace = true
