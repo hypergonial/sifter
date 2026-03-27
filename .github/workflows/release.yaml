@@ -17,7 +17,7 @@ env:
 
 jobs:
   init:
-    name: Bump project version
+    name: Initialize Workflow
     runs-on: ubuntu-latest
     permissions:
       contents: write
