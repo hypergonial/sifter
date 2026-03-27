@@ -18,5 +18,5 @@ name = "sosaku"
 crate-type = ["cdylib"]
 
 [dependencies]
-sosaku = { path = "../sosaku" }
+sosaku.workspace = true
 pyo3 = "0.28"

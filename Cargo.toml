@@ -11,6 +11,9 @@ license = "MIT"
 homepage = "https://github.com/hypergonial/sosaku"
 repository = "https://github.com/hypergonial/sosaku"
 
+[workspace.dependencies]
+sosaku = { version = "0.1.0", path = "sosaku" }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
