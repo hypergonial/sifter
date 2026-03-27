@@ -6,6 +6,10 @@ on:
       package-name:
         required: true
         type: string
+      python-version:
+        required: false
+        type: string
+        default: "3.10"
       working-directory:
         required: false
         type: string
@@ -19,7 +23,6 @@ permissions:
 
 env:
   UV_VERSION: 0.11
-  PYTHON_VERSION: 3.13
 
 jobs:
   linux:
@@ -48,7 +51,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ inputs.python-version }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -87,7 +90,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ inputs.python-version }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -127,7 +130,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ inputs.python-version }}
           architecture: ${{ matrix.platform.python_arch }}
 
       - name: Build wheels
@@ -162,7 +165,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ inputs.python-version }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
