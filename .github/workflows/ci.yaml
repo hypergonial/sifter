@@ -43,7 +43,7 @@ jobs:
         if: matrix.crate.is_python == true
         with:
           version: "0.11"
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Build | Compile Project
         working-directory: ./${{ matrix.crate.name }}
