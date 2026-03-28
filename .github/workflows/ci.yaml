@@ -17,18 +17,27 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: "Run tests for ${{ matrix.crate.name }}"
+    name: "Test ${{ matrix.crate.name }}"
     strategy:
       fail-fast: false
       matrix:
         crate:
           - name: sosaku
-            is_python: false
+          - name: sosaku
+            features: serde
           - name: sosaku-cli
-            is_python: false
           - name: sosaku-py
             is_python: true
     steps:
+      - name: Setup | Calculate feature flag
+        id: features
+        run: |
+          if [ "${{ matrix.crate.features }}" != "" ]; then
+              echo "feature_flag=--features ${{ matrix.crate.features }}" >> $GITHUB_OUTPUT
+          else
+              echo "feature_flag=" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup | Checkout Repository
         uses: actions/checkout@v6
 
@@ -51,7 +60,7 @@ jobs:
           if [ "${{ matrix.crate.is_python }}" = "true" ]; then
               uv sync --dev --verbose
           else
-              cargo build --verbose
+              cargo build --verbose ${{ steps.features.outputs.feature_flag }}
           fi
 
       - name: Run | Tests
@@ -60,7 +69,7 @@ jobs:
           if [ "${{ matrix.crate.is_python }}" = "true" ]; then
               uv run pytest tests -v
           else
-              cargo test --verbose
+              cargo test --verbose ${{ steps.features.outputs.feature_flag }}
           fi
 
   clippy:
