@@ -123,8 +123,8 @@ jobs:
           - "sosaku-cli"
     with:
       crate-name: ${{ matrix.crate }}
-      version: ${{ needs.init.outputs.version }}
       working-directory: ${{ matrix.crate }}
+      version: ${{ needs.init.outputs.version }}
       ref: ${{ github.event.repository.default_branch }}
 
   build_py_wheels:
@@ -135,7 +135,7 @@ jobs:
       fail-fast: true
       max-parallel: 10
       matrix:
-        package:
+        crate:
           - "sosaku-py"
         py-version:
           - "3.11"
@@ -143,8 +143,8 @@ jobs:
           - "3.13"
           - "3.14"
     with:
-      package-name: ${{ matrix.package }}
-      working-directory: ${{ matrix.package }}
+      package-name: ${{ matrix.crate }}
+      working-directory: ${{ matrix.crate }}
       python-version: ${{ matrix.py-version }}
       ref: ${{ github.event.repository.default_branch }}
 
