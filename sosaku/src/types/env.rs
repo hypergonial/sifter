@@ -208,7 +208,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// Tip: You can create a custom vtable by cloning the default one and modifying it, e.g.:
     /// ```rust
-    /// use sosaku::{Value, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallError, EvalError};
+    /// use sosaku::{Value, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallback, FnCallError, EvalError};
     ///
     /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
     ///     // Your function implementation goes here
@@ -228,7 +228,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # #[cfg(feature = "serde_json")] {
     /// let mut custom_vtable = DEFAULT_VTABLE.clone();
-    /// custom_vtable.insert("my_func", my_func);
+    /// custom_vtable.insert("my_func", FnCallback::new_sync(my_func));
     /// let env = Env::new()
     ///    .bind("x", serde_json::json!(42))
     ///    .use_vtable(custom_vtable)

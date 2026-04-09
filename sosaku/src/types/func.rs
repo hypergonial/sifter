@@ -3,8 +3,8 @@ use crate::types::exp::Exp;
 /// Represents a function item in the AST, which consists of a function name and a list of argument expressions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionItem<'a> {
-    name: String,
-    args: Vec<Exp<'a>>,
+    pub(crate) name: String,
+    pub(crate) args: Vec<Exp<'a>>,
 }
 
 impl<'a> FunctionItem<'a> {
@@ -32,5 +32,10 @@ impl<'a> FunctionItem<'a> {
     /// The argument expressions passed to the function.
     pub fn args(&self) -> &[Exp<'_>] {
         &self.args
+    }
+
+    /// Consumes the `FunctionItem` and returns its arguments as a vector of `Exp`.
+    pub fn into_args(self) -> Vec<Exp<'a>> {
+        self.args
     }
 }

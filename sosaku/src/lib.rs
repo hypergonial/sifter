@@ -6,7 +6,9 @@ pub mod types;
 pub mod utils;
 
 pub use errors::{Error, EvalError, FnCallError, NomError, ParseError, VarAccessError};
-pub use functions::{DEFAULT_VTABLE, FnArgs, FnCallback, FnResult, VTable};
+pub use functions::{
+    AsyncFnCallback, DEFAULT_VTABLE, FnArgs, FnCallback, FnResult, SyncFnCallback, VTable,
+};
 pub use types::{Env, Exp, JsonMap, JsonValue, Type, Value, VarAccess};
 
 #[cfg(feature = "serde_json")]

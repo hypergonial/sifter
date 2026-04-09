@@ -1,4 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Debug, pin::Pin, sync::LazyLock};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Debug,
+    pin::Pin,
+    sync::{Arc, LazyLock},
+};
 
 use crate::{EvalError, FnCallError};
 
@@ -10,63 +16,32 @@ pub type FnArgs<'a> = &'a [Value<'a>];
 /// The result of a function call, which can either be a successful [`Value`] value or an error if the function call fails.
 pub type FnResult<'a> = Result<Value<'a>, FnCallError>;
 
-pub trait SyncFnCallback: for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync {
-    fn clone_box(&self) -> Box<dyn SyncFnCallback>;
-}
+pub type SyncFnCallback = dyn for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync;
 
-impl<T> SyncFnCallback for T
-where
-    T: for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync + Clone + 'static,
-{
-    fn clone_box(&self) -> Box<dyn SyncFnCallback> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn SyncFnCallback> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
-
-pub trait AsyncFnCallback:
-    for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>> + Send + Sync
-{
-    fn clone_box(&self) -> Box<dyn AsyncFnCallback>;
-}
-
-impl<T> AsyncFnCallback for T
-where
-    T: for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>
-        + Send
-        + Sync
-        + Clone
-        + 'static,
-{
-    fn clone_box(&self) -> Box<dyn AsyncFnCallback> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn AsyncFnCallback> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
+pub type AsyncFnCallback = dyn for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>
+    + Send
+    + Sync;
 
 #[derive(Clone)]
 pub enum FnCallback {
-    Sync(Box<dyn SyncFnCallback>),
-    Async(Box<dyn AsyncFnCallback>),
+    Sync(Arc<SyncFnCallback>),
+    Async(Arc<AsyncFnCallback>),
 }
 
 impl FnCallback {
-    pub fn new_sync(callback: impl SyncFnCallback + 'static) -> Self {
-        Self::Sync(Box::new(callback))
+    pub fn new_sync(
+        callback: impl for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync + 'static,
+    ) -> Self {
+        Self::Sync(Arc::new(callback))
     }
 
-    pub fn new_async(callback: impl AsyncFnCallback + 'static) -> Self {
-        Self::Async(Box::new(callback))
+    pub fn new_async(
+        callback: impl for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self::Async(Arc::new(callback))
     }
 
     /// Call this [`FnCallback`] in a synchronous context.

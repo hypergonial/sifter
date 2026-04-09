@@ -3,10 +3,28 @@ use std::{borrow::Cow, collections::BTreeMap, fmt::Debug};
 use crate::{
     JsonValue, VarAccessError,
     errors::EvalError,
-    types::{Env, FunctionItem, VarAccess},
+    types::{Env, VarAccess},
 };
 
 use super::types::{Exp, Value};
+
+#[inline]
+#[expect(clippy::unnecessary_wraps)]
+const fn out(value: Value<'_>) -> Result<Cow<'_, Value<'_>>, EvalError> {
+    Ok(Cow::Owned(value))
+}
+
+fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
+    var: &'a VarAccess,
+    env: &'b Env<'b, V>,
+) -> Result<Cow<'c, Value<'c>>, EvalError> {
+    let obj = var
+        .access_from_bindings(env)
+        .map_err(EvalError::VarAccess)?;
+    let value = Value::from_json_object_cow(obj)
+        .map_err(|e| EvalError::VarAccess(VarAccessError::ConversionError { message: e }))?;
+    Ok(Cow::Owned(value))
+}
 
 #[derive(Debug, Clone, Copy)]
 enum Cmp {
@@ -16,100 +34,183 @@ enum Cmp {
     Geq,
 }
 
-fn expect_type<'a, 'b, T>(
-    value: &'b Value<'a>,
-    extractor: impl Fn(&'b Value<'a>) -> Option<&'b T>,
-    type_name: &str,
-) -> Result<&'b T, EvalError> {
-    extractor(value).ok_or_else(|| EvalError::TypeError {
-        message: format!("Expected {}, got {}", type_name, value.type_name()),
-    })
+// Iterative impl
+
+#[derive(Debug)]
+enum Frame<'exp> {
+    // Value
+    ObjectKey(&'exp String),
+    ToEval(&'exp Exp<'exp>),
+    // Operators
+    Neg,
+    Or {
+        rhs: &'exp Exp<'exp>,
+    },
+    And {
+        rhs: &'exp Exp<'exp>,
+    },
+    Eq,
+    Neq,
+    Cmp(Cmp),
+    FnCall {
+        function_name: &'exp str,
+        args_len: usize,
+    },
+    Array {
+        total_len: usize,
+    },
+    Object {
+        total_len: usize,
+    },
 }
 
-fn expect_bool(value: &Value<'_>) -> Result<bool, EvalError> {
-    expect_type(
-        value,
-        move |l| match l {
-            Value::Bool(b) => Some(b),
-            _ => None,
-        },
-        "a boolean",
-    )
-    .map(ToOwned::to_owned)
+trait FrameExt<'exp> {
+    fn push_frames(&mut self, exp: &'exp Exp<'exp>);
 }
 
-#[inline]
-#[expect(clippy::unnecessary_wraps)]
-const fn out(value: Value<'_>) -> Result<Cow<'_, Value<'_>>, EvalError> {
-    Ok(Cow::Owned(value))
-}
-
-fn eval_neg<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    exp: &'a Exp<'a>,
-    env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let value: bool = eval(exp, env)?.as_ref().into();
-    out(Value::Bool(!value))
-}
-
-fn eval_and<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    exp1: &'a Exp<'a>,
-    exp2: &'a Exp<'a>,
-    env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let value1 = eval(exp1, env)?;
-    if bool::from(value1.as_ref()) {
-        let value2 = eval(exp2, env)?;
-        Ok(value2)
-    } else {
-        out(Value::Bool(false))
+impl<'exp> FrameExt<'exp> for Vec<Frame<'exp>> {
+    /// Push the necessary frames onto the stack to evaluate the given expression
+    /// in the next eval iteration(s).
+    ///
+    /// ## Example
+    ///
+    /// Expression: `Exp::Array(1,2,3)`
+    ///
+    /// Frames pushed (top of stack last):
+    /// - `Frame::Array { total_len: 3 }`
+    /// - `Frame::ToEval(Exp::Literal(3))`
+    /// - `Frame::ToEval(Exp::Literal(2))`
+    /// - `Frame::ToEval(Exp::Literal(1))`
+    ///
+    /// The eval loop will then pop the values,
+    /// push them onto the value stack, and when it sees the [`Frame::Array`] frame,
+    /// it will pop the 3 values from the value stack and construct the array value.
+    fn push_frames(&mut self, exp: &'exp Exp<'exp>) {
+        match exp {
+            Exp::Literal(_) | Exp::Var(_) => self.push(Frame::ToEval(exp)),
+            Exp::Neg(inner) => {
+                self.push(Frame::Neg);
+                self.push(Frame::ToEval(inner));
+            }
+            Exp::And(lhs, rhs) => {
+                self.push(Frame::And { rhs });
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Or(lhs, rhs) => {
+                self.push(Frame::Or { rhs });
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Eq(lhs, rhs) => {
+                self.push(Frame::Eq);
+                self.push(Frame::ToEval(rhs));
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Neq(lhs, rhs) => {
+                self.push(Frame::Neq);
+                self.push(Frame::ToEval(rhs));
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Gt(lhs, rhs) => {
+                self.push(Frame::Cmp(Cmp::Gt));
+                self.push(Frame::ToEval(rhs));
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Lt(lhs, rhs) => {
+                self.push(Frame::Cmp(Cmp::Lt));
+                self.push(Frame::ToEval(rhs));
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Geq(lhs, rhs) => {
+                self.push(Frame::Cmp(Cmp::Geq));
+                self.push(Frame::ToEval(rhs));
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::Leq(lhs, rhs) => {
+                self.push(Frame::Cmp(Cmp::Leq));
+                self.push(Frame::ToEval(rhs));
+                self.push(Frame::ToEval(lhs));
+            }
+            Exp::FnCall(func) => {
+                self.push(Frame::FnCall {
+                    function_name: func.name(),
+                    args_len: func.args().len(),
+                });
+                for arg in func.args().iter().rev() {
+                    self.push(Frame::ToEval(arg));
+                }
+            }
+            Exp::Array(items) => {
+                self.push(Frame::Array {
+                    total_len: items.len(),
+                });
+                for item in items {
+                    self.push(Frame::ToEval(item));
+                }
+            }
+            Exp::Object(map) => {
+                self.push(Frame::Object {
+                    total_len: map.len(),
+                });
+                for (key, value) in map {
+                    self.push(Frame::ToEval(value));
+                    self.push(Frame::ObjectKey(key));
+                }
+            }
+        }
     }
 }
 
-fn eval_or<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    exp1: &'a Exp<'a>,
-    exp2: &'a Exp<'a>,
-    env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let value1 = eval(exp1, env)?;
-    if bool::from(value1.as_ref()) {
-        Ok(value1)
+fn eval_neg<'exp: 'out, 'out>(values: &mut Vec<Cow<'out, Value<'out>>>) {
+    let value: bool = values.pop().expect("Value stack underflow").as_ref().into();
+    values.push(Cow::Owned(Value::Bool(!value)));
+}
+
+fn eval_and<'exp: 'out, 'out>(
+    rhs: &'exp Exp<'exp>,
+    stack: &mut Vec<Frame<'exp>>,
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) {
+    let lhs = values.pop().expect("Value stack underflow");
+    if bool::from(&*lhs) {
+        stack.push(Frame::ToEval(rhs));
     } else {
-        let value2 = eval(exp2, env)?;
-        Ok(value2)
+        values.push(Cow::Owned(Value::Bool(false)));
     }
 }
 
-fn eval_eq<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    exp1: &'a Exp,
-    exp2: &'a Exp,
-    env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let value1 = eval(exp1, env)?;
-    let value2 = eval(exp2, env)?;
-
-    Ok(Cow::Owned(Value::Bool(value1 == value2)))
+fn eval_or<'exp: 'out, 'out>(
+    rhs: &'exp Exp<'exp>,
+    stack: &mut Vec<Frame<'exp>>,
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) {
+    let lhs = values.pop().expect("Value stack underflow");
+    if bool::from(&*lhs) {
+        values.push(lhs);
+    } else {
+        stack.push(Frame::ToEval(rhs));
+    }
 }
 
-fn eval_neq<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    exp1: &'a Exp<'a>,
-    exp2: &'a Exp<'a>,
-    env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let res = expect_bool(&*eval_eq(exp1, exp2, env)?)?;
-    out(Value::Bool(!res))
+fn eval_eq<'exp: 'out, 'out>(values: &mut Vec<Cow<'out, Value<'out>>>) {
+    let rhs = values.pop().expect("Value stack underflow");
+    let lhs = values.pop().expect("Value stack underflow");
+    values.push(Cow::Owned(Value::Bool(lhs == rhs)));
 }
 
-fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    exp1: &'a Exp<'a>,
-    exp2: &'a Exp<'a>,
-    env: &'b Env<'b, V>,
+fn eval_neq<'exp: 'out, 'out>(values: &mut Vec<Cow<'out, Value<'out>>>) {
+    let rhs = values.pop().expect("Value stack underflow");
+    let lhs = values.pop().expect("Value stack underflow");
+    values.push(Cow::Owned(Value::Bool(lhs != rhs)));
+}
+
+fn eval_cmp<'exp: 'out, 'out>(
     cmp: Cmp,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let value1 = eval(exp1, env)?;
-    let value2 = eval(exp2, env)?;
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) -> Result<(), EvalError> {
+    let rhs = values.pop().expect("Value stack underflow");
+    let lhs = values.pop().expect("Value stack underflow");
 
-    match (value1.as_ref(), value2.as_ref()) {
+    let res = match (lhs.as_ref(), rhs.as_ref()) {
         (Value::Int(i1), Value::Int(i2)) => out(Value::Bool(match cmp {
             Cmp::Lt => i1 < i2,
             Cmp::Gt => i1 > i2,
@@ -125,91 +226,105 @@ fn eval_cmp<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
         _ => Err(EvalError::TypeError {
             message: format!(
                 "Cannot compare values of different types: {} and {}",
-                value1.as_ref().type_name(),
-                value2.as_ref().type_name()
+                lhs.as_ref().type_name(),
+                rhs.as_ref().type_name()
             ),
         }),
-    }
+    }?;
+
+    values.push(res);
+    Ok(())
 }
 
-fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
-    var: &'a VarAccess,
-    env: &'b Env<'b, V>,
-) -> Result<Cow<'c, Value<'c>>, EvalError> {
-    let obj = var
-        .access_from_bindings(env)
-        .map_err(EvalError::VarAccess)?;
-    let value = Value::from_json_object_cow(obj)
-        .map_err(|e| EvalError::VarAccess(VarAccessError::ConversionError { message: e }))?;
-    Ok(Cow::Owned(value))
-}
-
-fn eval_array<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
-    array: &'exp Vec<Exp<'exp>>,
-    env: &'var Env<'var, V>,
-) -> Result<Cow<'out, Value<'out>>, EvalError> {
-    array
-        .iter()
-        .map(|e| eval(e, env).map(Cow::into_owned))
-        .collect::<Result<Value<'_>, _>>()
-        .map(Cow::Owned)
-}
-
-fn eval_object<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
-    object: &'exp BTreeMap<String, Exp<'exp>>,
-    env: &'var Env<'var, V>,
-) -> Result<Cow<'out, Value<'out>>, EvalError> {
-    object
-        .iter()
-        .map(|(k, e)| (k.clone(), eval(e, env).map(Cow::into_owned)))
-        .map(|(k, rv)| rv.map(|v| (k, v)))
-        .collect::<Result<Value<'_>, _>>()
-        .map(Cow::Owned)
-}
-
-fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
-    function: &'exp FunctionItem<'exp>,
-    env: &'var Env<'var, V>,
-) -> Result<Cow<'out, Value<'out>>, EvalError> {
+fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
+    function_name: &'exp str,
+    args_len: usize,
+    env: &Env<'var, impl JsonValue + Clone + Debug>,
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) -> Result<(), EvalError> {
     let func = env
         .vtable()
-        .get(function.name())
+        .get(function_name)
         .ok_or_else(|| EvalError::FunctionNotFound {
-            fn_name: function.name().to_string(),
+            fn_name: function_name.to_string(),
         })?;
 
-    let args: Vec<Value<'out>> = function
-        .args()
-        .iter()
-        .map(|arg| eval(arg, env))
-        .map(|res| res.map(Cow::into_owned))
-        .collect::<Result<Vec<_>, _>>()?;
+    let args: Vec<Value<'out>> = values
+        .drain(values.len() - args_len..)
+        .map(Cow::into_owned)
+        .collect();
 
-    func.call_sync(&args)
+    let ret = func
+        .call_sync(&args)
         .map_err(EvalError::FnCallError)
-        .map(|l| Cow::Owned(l.into_owned()))
+        .map(|l| Cow::Owned::<Value<'out>>(l.into_owned()))?;
+
+    values.push(ret);
+
+    Ok(())
+}
+
+fn eval_array<'exp: 'out, 'out>(len: usize, values: &mut Vec<Cow<'out, Value<'out>>>) {
+    let mut items = Vec::with_capacity(len);
+
+    for _ in 0..len {
+        items.push(values.pop().expect("Value stack underflow").into_owned());
+    }
+
+    values.push(Cow::Owned(Value::Array(items)));
+}
+
+fn eval_object<'exp: 'out, 'out>(
+    len: usize,
+    keys: &mut Vec<&'exp String>,
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) {
+    let mut map = BTreeMap::new();
+
+    for _ in 0..len {
+        let key = keys.pop().expect("Object key stack underflow").clone();
+        let value = values.pop().expect("Value stack underflow").into_owned();
+        map.insert(key, value);
+    }
+
+    values.push(Cow::Owned(Value::Object(map)));
 }
 
 pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     exp: &'exp Exp,
     env: &'var Env<'var, V>,
 ) -> Result<Cow<'out, Value<'out>>, EvalError> {
-    match exp {
-        Exp::Literal(value) => Ok(Cow::Borrowed(value)),
-        Exp::Array(array) => eval_array(array, env),
-        Exp::Object(object) => eval_object(object, env),
-        Exp::Var(var) => eval_varaccess(var, env),
-        Exp::FnCall(function) => eval_fncall(function, env),
-        Exp::Neg(exp) => eval_neg(exp, env),
-        Exp::Or(exp1, exp2) => eval_or(exp1, exp2, env),
-        Exp::And(exp1, exp2) => eval_and(exp1, exp2, env),
-        Exp::Eq(exp1, exp2) => eval_eq(exp1, exp2, env),
-        Exp::Neq(exp, exp1) => eval_neq(exp, exp1, env),
-        Exp::Gt(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Gt),
-        Exp::Lt(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Lt),
-        Exp::Geq(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Geq),
-        Exp::Leq(exp, exp1) => eval_cmp(exp, exp1, env, Cmp::Leq),
+    let mut stack = vec![Frame::ToEval(exp)];
+    let mut values: Vec<Cow<'out, Value<'out>>> = Vec::new();
+    let mut obj_keys: Vec<&'exp String> = Vec::new();
+
+    while let Some(frame) = stack.pop() {
+        match frame {
+            Frame::ToEval(exp) => match exp {
+                Exp::Literal(lit) => values.push(Cow::Borrowed(lit)),
+                Exp::Var(var) => values.push(eval_varaccess(var, env)?),
+                _ => stack.push_frames(exp),
+            },
+            Frame::ObjectKey(k) => obj_keys.push(k),
+            Frame::Neg => eval_neg(&mut values),
+            Frame::And { rhs } => eval_and(rhs, &mut stack, &mut values),
+            Frame::Or { rhs } => eval_or(rhs, &mut stack, &mut values),
+            Frame::Eq => eval_eq(&mut values),
+            Frame::Neq => eval_neq(&mut values),
+            Frame::Cmp(cmp) => eval_cmp(cmp, &mut values)?,
+            Frame::FnCall {
+                function_name,
+                args_len,
+            } => eval_fncall(function_name, args_len, env, &mut values)?,
+
+            Frame::Array { total_len } => eval_array(total_len, &mut values),
+            Frame::Object { total_len } => eval_object(total_len, &mut obj_keys, &mut values),
+        }
     }
+
+    values.pop().ok_or_else(|| EvalError::ValueError {
+        message: "No value on stack after evaluation".to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -217,7 +332,7 @@ pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
 mod tests {
     use std::sync::LazyLock;
 
-    use crate::{FnCallError, VarAccessError};
+    use crate::{FnCallError, VarAccessError, types::FunctionItem};
 
     use super::*;
 
