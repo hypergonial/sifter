@@ -4,7 +4,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 use serde::Deserialize;
 
 use crate::{JsonMap, JsonValue, utils::escape_str_for_json};
@@ -334,7 +334,7 @@ where
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 impl<'de> Deserialize<'de> for Value<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -345,7 +345,7 @@ impl<'de> Deserialize<'de> for Value<'de> {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 impl TryFrom<serde_json::Value> for Value<'_> {
     type Error = String;
 

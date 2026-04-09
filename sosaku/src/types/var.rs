@@ -5,7 +5,7 @@ use std::{
 
 use nom::Finish;
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 use serde::Deserialize;
 
 use crate::{
@@ -275,7 +275,7 @@ impl<'a> TryFrom<&'a str> for VarAccess {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 impl<'a> Deserialize<'a> for VarAccess {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -288,7 +288,7 @@ impl<'a> Deserialize<'a> for VarAccess {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 mod tests {
     use std::sync::LazyLock;
 

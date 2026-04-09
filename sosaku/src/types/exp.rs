@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::BTreeMap, fmt::Debug};
 
 use nom::Finish;
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 use serde::Deserialize;
 
 use crate::{
@@ -352,7 +352,7 @@ impl<'a> TryFrom<&'a str> for Exp<'a> {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 impl<'de> Deserialize<'de> for Exp<'de> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

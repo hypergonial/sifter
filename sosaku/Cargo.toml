@@ -19,7 +19,12 @@ regex = "1.12"
 thiserror = "2"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
-
+serde_yaml = { version = "0.9", optional = true }
 
 [features]
-serde = ["dep:serde", "dep:serde_json"]
+# Enable the use of serde_json types in bindings
+serde_json = ["dep:serde", "dep:serde_json"]
+# Convenience alias for 'serde_json'
+serde = ["serde_json"]
+# Adds 'sosaku::normalize_into_json' function for converting serde_yaml::Value to serde_json::Value
+serde_yaml = ["serde", "dep:serde_yaml"]

@@ -24,7 +24,9 @@ jobs:
         crate:
           - name: sosaku
           - name: sosaku
-            features: serde
+            features: serde_json
+          - name: sosaku
+            features: serde_yaml
           - name: sosaku-cli
           - name: sosaku-py
             is_python: true

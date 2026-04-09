@@ -9,7 +9,7 @@ pub use errors::{Error, EvalError, FnCallError, NomError, ParseError, VarAccessE
 pub use functions::{DEFAULT_VTABLE, FnArgs, FnCallback, FnResult, VTable};
 pub use types::{Env, Exp, JsonMap, JsonValue, Type, Value, VarAccess};
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 pub mod serde {
     pub use serde_json::{Map, Value};
 }

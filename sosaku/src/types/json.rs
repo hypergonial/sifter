@@ -30,7 +30,7 @@ pub trait JsonMap<V: JsonValue>: IntoIterator<Item = (String, V)> {
         V: 'a;
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 impl JsonMap<serde_json::Value> for serde_json::Map<String, serde_json::Value> {
     fn get(&self, key: &str) -> Option<&serde_json::Value> {
         self.get(key)
@@ -353,7 +353,7 @@ impl JsonValue for Value<'_> {
     }
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 impl JsonValue for serde_json::Value {
     type MapType = serde_json::Map<String, Self>;
 
@@ -420,5 +420,84 @@ impl JsonValue for serde_json::Value {
 
     fn as_null(&self) -> Option<()> {
         self.as_null()
+    }
+}
+
+#[cfg(feature = "serde_yaml")]
+fn coerce_key_to_str(value: serde_yaml::Value) -> Result<String, String> {
+    match value {
+        serde_yaml::Value::String(s) => Ok(s),
+        serde_yaml::Value::Number(n) => Ok(n.to_string()),
+        serde_yaml::Value::Bool(b) => Ok(b.to_string()),
+        serde_yaml::Value::Null => Ok("null".to_string()),
+        _ => Err(format!(
+            "Failed to convert YAML key '{value:?}' to string - Only string keys are supported in JSON mappings",
+        )),
+    }
+}
+
+/// Normalize a [`serde_yaml::Value`] into a [`serde_json::Value`], ensuring that all YAML types are
+/// converted to their JSON equivalents.
+///
+/// Map keys are coerced into strings if possible, and an error is returned if a key cannot be converted
+/// or if duplicate keys are found after coercion.
+///
+/// This function is useful for ensuring that YAML data can be safely used as JSON in Sosaku bindings,
+/// which require JSON-compatible types.
+///
+/// ## Arguments
+///
+/// - `value`: The `serde_yaml::Value` to normalize into JSON.
+///
+/// ## Returns
+///
+/// The JSON-normalized value as a `serde_json::Value`.
+///
+/// ## Errors
+///
+/// Returns an error if a YAML mapping key cannot be coerced into a string or
+/// if duplicate keys are found in a mapping after coercion.
+#[cfg(feature = "serde_yaml")]
+pub fn normalize_into_json(value: serde_yaml::Value) -> Result<serde_json::Value, String> {
+    match value {
+        serde_yaml::Value::Null => Ok(serde_json::Value::Null),
+        serde_yaml::Value::Bool(b) => Ok(serde_json::Value::Bool(b)),
+        serde_yaml::Value::String(s) => Ok(serde_json::Value::String(s)),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(serde_json::Value::Number(i.into()))
+            } else if let Some(u) = n.as_u64() {
+                Ok(serde_json::Value::Number(u.into()))
+            } else if let Some(f) = n.as_f64() {
+                Ok(serde_json::Value::Number(
+                    serde_json::Number::from_f64(f)
+                        .ok_or_else(|| format!("Failed to convert float {f} to JSON number"))?,
+                ))
+            } else {
+                Err(format!("Invalid YAML number: {n}"))
+            }
+        }
+        serde_yaml::Value::Sequence(seq) => Ok(seq
+            .into_iter()
+            .map(normalize_into_json)
+            .collect::<Result<Vec<_>, _>>()
+            .map(serde_json::Value::Array)?),
+        serde_yaml::Value::Mapping(map) => {
+            let mut json_map = serde_json::Map::new();
+            for (key, value) in map {
+                let key_str = coerce_key_to_str(key)?;
+                if json_map
+                    .insert(key_str.clone(), normalize_into_json(value)?)
+                    .is_some()
+                {
+                    return Err(format!("Duplicate key found in YAML mapping: {key_str}"));
+                }
+            }
+            Ok(serde_json::Value::Object(json_map))
+        }
+        serde_yaml::Value::Tagged(t) => {
+            // For tagged values, we can choose to ignore the tag and just convert the inner value
+            normalize_into_json(t.value)
+        }
     }
 }

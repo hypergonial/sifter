@@ -21,10 +21,10 @@ macro_rules! define_env {
     };
 }
 
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde_json")]
 define_env!(::serde_json::Value);
 
-#[cfg(not(feature = "serde"))]
+#[cfg(not(feature = "serde_json"))]
 define_env!();
 
 impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
@@ -32,7 +32,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     ///
     /// # Example
     /// ```rust
-    ///  # #[cfg(feature = "serde")] {
+    ///  # #[cfg(feature = "serde_json")] {
     /// // Note: The `serde` feature must be enabled to use
     /// // `serde_json::Value` as the JSON value type.
     /// use sosaku::Env;
@@ -76,7 +76,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
 ///
 /// # Example
 /// ```rust
-/// # #[cfg(feature = "serde")] {
+/// # #[cfg(feature = "serde_json")] {
 /// // Note: The `serde` feature must be enabled to use
 /// // `serde_json::Value` as the JSON value type.
 /// use sosaku::Env;
@@ -226,7 +226,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///     Ok(Value::Int(42))
     /// }
     ///
-    /// # #[cfg(feature = "serde")] {
+    /// # #[cfg(feature = "serde_json")] {
     /// let mut custom_vtable = DEFAULT_VTABLE.clone();
     /// custom_vtable.insert("my_func", my_func);
     /// let env = Env::new()
