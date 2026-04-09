@@ -18,10 +18,14 @@ pub type FnResult<'a> = Result<Value<'a>, FnCallError>;
 
 pub type SyncFnCallback = dyn for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync;
 
-pub type AsyncFnCallback = dyn for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>
-    + Send
-    + Sync;
+/// Boxed async return type for callback trait objects.
+pub type AsyncFnResult<'a> = Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>;
 
+pub type AsyncFnCallback = dyn for<'a> Fn(FnArgs<'a>) -> AsyncFnResult<'a> + Send + Sync;
+
+/// Valid types for a function callback, which can be either synchronous or asynchronous.
+///
+/// To create a new [`FnCallback`], use the [`FnCallback::new_sync`] or [`FnCallback::new_async`] constructors.
 #[derive(Clone)]
 pub enum FnCallback {
     Sync(Arc<SyncFnCallback>),
@@ -29,17 +33,65 @@ pub enum FnCallback {
 }
 
 impl FnCallback {
+    /// Create a new synchronous function callback from the given closure or function item.
+    ///
+    /// ### Example
+    ///
+    /// ```rust
+    /// use std::borrow::Cow;
+    /// use sosaku::{FnArgs, FnCallback, FnResult, Value};
+    ///
+    /// // With function items
+    /// fn length<'a>(args: FnArgs<'a>) -> FnResult<'a> {
+    ///     Ok(Value::Int(args.len() as i64))
+    /// }
+    ///
+    /// let cb = FnCallback::new_sync(length);
+    ///
+    /// // With closures
+    /// let prefix = String::from("arg count");
+    /// let cb = FnCallback::new_sync(move |args| -> FnResult<'_> {
+    ///   Ok(Value::String(Cow::Owned(format!("{prefix}: {}", args.len()))))
+    /// });
+    /// ```
     pub fn new_sync(
         callback: impl for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync + 'static,
     ) -> Self {
         Self::Sync(Arc::new(callback))
     }
 
+    /// Create a new asynchronous function callback from the given async closure or async function item.
+    ///
+    /// ### Example
+    ///
+    /// ```rust
+    /// use std::{borrow::Cow, sync::Arc};
+    /// use sosaku::{AsyncFnResult, FnArgs, FnCallback, FnResult, Value};
+    ///
+    /// // With async function items
+    /// async fn async_length<'a>(args: FnArgs<'a>, state: Arc<str>) -> FnResult<'a> {
+    ///     tokio::task::yield_now().await; // simulate an async operation
+    ///     Ok(Value::Int(args.len() as i64))
+    /// }
+    ///
+    /// let shared_state: Arc<str> = Arc::from("cool stuff");
+    /// let async_cb = FnCallback::new_async(
+    ///     // The returned future must be pinned
+    ///     move |args| Box::pin(async_length(args, Arc::clone(&shared_state)))
+    /// );
+    ///
+    /// // With async closures
+    /// let shared_state = Arc::new(String::from("yippee"));
+    /// let async_cb = FnCallback::new_async(move |args| -> AsyncFnResult<'_> {
+    ///     let state = shared_state.clone();
+    ///     Box::pin(async move {
+    ///         tokio::task::yield_now().await;
+    ///         Ok(Value::String(Cow::Owned(format!("{state}: {}", args.len()))))
+    ///     })
+    /// });
+    /// ```
     pub fn new_async(
-        callback: impl for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>
-        + Send
-        + Sync
-        + 'static,
+        callback: impl for<'a> Fn(FnArgs<'a>) -> AsyncFnResult<'a> + Send + Sync + 'static,
     ) -> Self {
         Self::Async(Arc::new(callback))
     }
@@ -48,6 +100,7 @@ impl FnCallback {
     ///
     /// ## Arguments
     ///
+    /// - `name`: The name of the function being called, used for error reporting.
     /// - `args`: The arguments to pass to the function callback.
     ///
     /// ## Returns
@@ -58,11 +111,11 @@ impl FnCallback {
     ///
     /// Returns an error if the underlying function returns an error, or if this [`FnCallback`] is
     /// an async function which cannot be called in a synchronous context.
-    pub fn call_sync<'a>(&self, args: FnArgs<'a>) -> FnResult<'a> {
+    pub(crate) fn call_sync<'a>(&self, name: &str, args: FnArgs<'a>) -> FnResult<'a> {
         match self {
             Self::Sync(cb) => cb(args),
             Self::Async(_) => Err(FnCallError {
-                fn_name: "<async function>".to_string(),
+                fn_name: name.to_string(),
                 reason: EvalError::CallSyncinAsync.into(),
             }),
         }
@@ -72,6 +125,7 @@ impl FnCallback {
     ///
     /// ## Arguments
     ///
+    /// - `name`: The name of the function being called, used for error reporting if the call fails.
     /// - `args`: The arguments to pass to the function callback.
     ///
     /// ## Returns
@@ -81,7 +135,7 @@ impl FnCallback {
     /// ## Errors
     ///
     /// Returns an error if the underlying function returns an error.
-    pub async fn call_async<'a>(&self, args: FnArgs<'a>) -> FnResult<'a> {
+    pub(crate) async fn call_async<'a>(&self, _name: &str, args: FnArgs<'a>) -> FnResult<'a> {
         match self {
             Self::Sync(cb) => cb(args),
             Self::Async(cb) => cb(args).await,

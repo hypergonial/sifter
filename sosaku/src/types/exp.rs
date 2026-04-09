@@ -95,6 +95,9 @@ impl<'exp> Exp<'exp> {
 
     /// Evaluate the expression in the given environment and return the resulting literal value.
     ///
+    /// If you added async functions to your environment, you should use the [`Exp::eval_async`] method instead,
+    /// which will properly await any async functions during evaluation.
+    ///
     /// ## Parameters
     ///
     /// - `env`: The [`Env`] to evaluate the expression in, which contains variable bindings and function definitions.
@@ -105,7 +108,7 @@ impl<'exp> Exp<'exp> {
     ///
     /// ## Errors
     ///
-    /// - If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
+    /// If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
     pub fn eval<'var, 'out, V: JsonValue + Clone + Debug>(
         &'exp self,
         env: &'var Env<'var, V>,
@@ -115,6 +118,35 @@ impl<'exp> Exp<'exp> {
         'var: 'out,
     {
         crate::interpreter::eval(self, env)
+    }
+
+    /// Evaluate the expression in the given environment and return the resulting literal value.
+    /// Allows for the use of async functions in the expression, which will be awaited during evaluation.
+    ///
+    /// Note that this does **NOT** make the entire evaluation process asynchronous - only the execution of async functions will be asynchronous.
+    /// The overall evaluation will still be performed in a single pass, and the resulting value will be returned once all async functions have
+    /// been awaited and their results incorporated into the final result.
+    ///
+    /// ## Parameters
+    ///
+    /// - `env`: The [`Env`] to evaluate the expression in, which contains variable bindings and function definitions.
+    ///
+    /// ## Returns
+    ///
+    /// - <code>Ok([Cow]<'_, [Literal]>)</code> if the expression was successfully evaluated, where the `Literal` is the resulting value of the expression.
+    ///
+    /// ## Errors
+    ///
+    /// If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
+    pub async fn eval_async<'var, 'out, V: JsonValue + Clone + Debug>(
+        &'exp self,
+        env: &'var Env<'var, V>,
+    ) -> Result<Cow<'out, Value<'out>>, EvalError>
+    where
+        'exp: 'out,
+        'var: 'out,
+    {
+        crate::interpreter::eval_async(self, env).await
     }
 
     /// Create a new [`Exp`] representing a literal value.

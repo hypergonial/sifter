@@ -236,34 +236,6 @@ fn eval_cmp<'exp: 'out, 'out>(
     Ok(())
 }
 
-fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
-    function_name: &'exp str,
-    args_len: usize,
-    env: &Env<'var, impl JsonValue + Clone + Debug>,
-    values: &mut Vec<Cow<'out, Value<'out>>>,
-) -> Result<(), EvalError> {
-    let func = env
-        .vtable()
-        .get(function_name)
-        .ok_or_else(|| EvalError::FunctionNotFound {
-            fn_name: function_name.to_string(),
-        })?;
-
-    let args: Vec<Value<'out>> = values
-        .drain(values.len() - args_len..)
-        .map(Cow::into_owned)
-        .collect();
-
-    let ret = func
-        .call_sync(&args)
-        .map_err(EvalError::FnCallError)
-        .map(|l| Cow::Owned::<Value<'out>>(l.into_owned()))?;
-
-    values.push(ret);
-
-    Ok(())
-}
-
 fn eval_array<'exp: 'out, 'out>(len: usize, values: &mut Vec<Cow<'out, Value<'out>>>) {
     let mut items = Vec::with_capacity(len);
 
@@ -290,8 +262,65 @@ fn eval_object<'exp: 'out, 'out>(
     values.push(Cow::Owned(Value::Object(map)));
 }
 
+fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
+    function_name: &'exp str,
+    args_len: usize,
+    env: &Env<'var, impl JsonValue + Clone + Debug>,
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) -> Result<(), EvalError> {
+    let func = env
+        .vtable()
+        .get(function_name)
+        .ok_or_else(|| EvalError::FunctionNotFound {
+            fn_name: function_name.to_string(),
+        })?;
+
+    let args: Vec<Value<'out>> = values
+        .drain(values.len() - args_len..)
+        .map(Cow::into_owned)
+        .collect();
+
+    let ret = func
+        .call_sync(function_name, &args)
+        .map_err(EvalError::FnCallError)
+        .map(|l| Cow::Owned::<Value<'out>>(l.into_owned()))?;
+
+    values.push(ret);
+
+    Ok(())
+}
+
+async fn eval_fncall_async<'exp: 'out, 'var: 'out, 'out>(
+    function_name: &'exp str,
+    args_len: usize,
+    env: &Env<'var, impl JsonValue + Clone + Debug>,
+    values: &mut Vec<Cow<'out, Value<'out>>>,
+) -> Result<(), EvalError> {
+    let func = env
+        .vtable()
+        .get(function_name)
+        .ok_or_else(|| EvalError::FunctionNotFound {
+            fn_name: function_name.to_string(),
+        })?;
+
+    let args: Vec<Value<'out>> = values
+        .drain(values.len() - args_len..)
+        .map(Cow::into_owned)
+        .collect();
+
+    let ret = func
+        .call_async(function_name, &args)
+        .await
+        .map_err(EvalError::FnCallError)
+        .map(|l| Cow::Owned::<Value<'out>>(l.into_owned()))?;
+
+    values.push(ret);
+
+    Ok(())
+}
+
 pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
-    exp: &'exp Exp,
+    exp: &'exp Exp<'exp>,
     env: &'var Env<'var, V>,
 ) -> Result<Cow<'out, Value<'out>>, EvalError> {
     let mut stack = vec![Frame::ToEval(exp)];
@@ -327,12 +356,52 @@ pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     })
 }
 
+pub(crate) async fn eval_async<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
+    exp: &'exp Exp<'exp>,
+    env: &'var Env<'var, V>,
+) -> Result<Cow<'out, Value<'out>>, EvalError> {
+    let mut stack = vec![Frame::ToEval(exp)];
+    let mut values: Vec<Cow<'out, Value<'out>>> = Vec::new();
+    let mut obj_keys: Vec<&'exp String> = Vec::new();
+
+    while let Some(frame) = stack.pop() {
+        match frame {
+            Frame::ToEval(exp) => match exp {
+                Exp::Literal(lit) => values.push(Cow::Borrowed(lit)),
+                Exp::Var(var) => values.push(eval_varaccess(var, env)?),
+                _ => stack.push_frames(exp),
+            },
+            Frame::ObjectKey(k) => obj_keys.push(k),
+            Frame::Neg => eval_neg(&mut values),
+            Frame::And { rhs } => eval_and(rhs, &mut stack, &mut values),
+            Frame::Or { rhs } => eval_or(rhs, &mut stack, &mut values),
+            Frame::Eq => eval_eq(&mut values),
+            Frame::Neq => eval_neq(&mut values),
+            Frame::Cmp(cmp) => eval_cmp(cmp, &mut values)?,
+            Frame::FnCall {
+                function_name,
+                args_len,
+            } => eval_fncall_async(function_name, args_len, env, &mut values).await?,
+
+            Frame::Array { total_len } => eval_array(total_len, &mut values),
+            Frame::Object { total_len } => eval_object(total_len, &mut obj_keys, &mut values),
+        }
+    }
+
+    values.pop().ok_or_else(|| EvalError::ValueError {
+        message: "No value on stack after evaluation".to_string(),
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use std::sync::LazyLock;
+    use std::sync::{Arc, LazyLock};
 
-    use crate::{FnCallError, VarAccessError, types::FunctionItem};
+    use crate::{
+        DEFAULT_VTABLE, FnArgs, FnCallError, FnCallback, FnResult, VarAccessError,
+        types::FunctionItem,
+    };
 
     use super::*;
 
@@ -356,6 +425,16 @@ mod tests {
                 ])),
             )
             .build()
+    });
+
+    async fn async_func(_args: FnArgs<'_>, state: Arc<str>) -> FnResult<'_> {
+        tokio::task::yield_now().await;
+        Ok(Value::String(Cow::Owned(state.to_string())))
+    }
+
+    static ASYNC_CALLBACK: LazyLock<FnCallback> = LazyLock::new(|| {
+        let state: Arc<str> = Arc::from("async result");
+        FnCallback::new_async(move |args| Box::pin(async_func(args, Arc::clone(&state))))
     });
 
     static EXPS: LazyLock<[(&str, Result<Value, EvalError>); 33]> = LazyLock::new(|| {
@@ -474,6 +553,16 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_exps_async() {
+        for (exp_str, expected) in &*EXPS {
+            println!("Testing expression (async): {exp_str}");
+            let exp = (*exp_str).try_into().unwrap();
+            let result = eval_async(&exp, &ENV).await;
+            assert_eq!(result.map(Cow::into_owned).as_ref(), expected.as_ref());
+        }
+    }
+
     #[test]
     fn test_eval_literal() {
         let exp = Exp::literal(Value::Int(42));
@@ -530,5 +619,43 @@ mod tests {
         let exp = Exp::neq(Exp::varname("x").unwrap(), Exp::literal(Value::Int(42)));
         let result = eval(&exp, &ENV).unwrap();
         assert_eq!(result.into_owned(), Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn test_eval_fncall_async() {
+        let callback = ASYNC_CALLBACK.clone();
+        let mut vtable = DEFAULT_VTABLE.clone();
+        vtable.insert("asyncFunc", callback);
+
+        let env = Env::new()
+            .use_vtable(vtable)
+            .bind("x", Value::Int(42))
+            .build();
+
+        let exp = Exp::fn_call(FunctionItem::new("asyncFunc", []));
+        let result = eval_async(&exp, &env).await.unwrap();
+        assert_eq!(result.into_owned(), Value::String("async result".into()));
+    }
+
+    #[test]
+    fn test_eval_fncall_async_in_sync() {
+        let callback = ASYNC_CALLBACK.clone();
+        let mut vtable = DEFAULT_VTABLE.clone();
+        vtable.insert("asyncFunc", callback);
+
+        let env = Env::new()
+            .use_vtable(vtable)
+            .bind("x", Value::Int(42))
+            .build();
+
+        let exp = Exp::fn_call(FunctionItem::new("asyncFunc", []));
+        let result = eval(&exp, &env);
+        assert_eq!(
+            result.unwrap_err(),
+            EvalError::FnCallError(FnCallError {
+                fn_name: "asyncFunc".to_string(),
+                reason: EvalError::CallSyncinAsync.into(),
+            })
+        );
     }
 }
