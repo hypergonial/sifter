@@ -43,7 +43,7 @@ pub enum EvalError {
     RegexError { message: String },
     #[error("Argument Error: Expected {expected} arguments, but got {got}")]
     ArgumentCount { expected: usize, got: usize },
-    #[error("Cannot call an async function in a synchronous context")]
+    #[error("Cannot call an async function in a sync context")]
     CallSyncinAsync,
 }
 
