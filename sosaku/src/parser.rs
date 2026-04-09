@@ -15,6 +15,9 @@ use super::types::{Exp, FunctionItem, Value, VarAccess, VarName};
 
 static KEYWORDS: [&str; 3] = ["true", "false", "null"];
 
+// TODO: Consider migrating to winnow?
+// https://docs.rs/winnow/latest/winnow/index.html
+
 struct BinaryOperator<'a> {
     op: &'static str,
     func: fn(Exp<'a>, Exp<'a>) -> Exp<'a>,
