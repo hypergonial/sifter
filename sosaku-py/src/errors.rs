@@ -44,6 +44,10 @@ impl<'py> IntoPyObject<'py> for PySosakuError {
                     format!("Expected {expected} arguments, got {got}"),
                 )
                 .into_bound_py_any(py)?),
+                sosaku::EvalError::CallSyncinAsync => Ok(PyTypeError::new_err(
+                    "Cannot call an async function in a synchronous context",
+                )
+                .into_bound_py_any(py)?),
             },
         }
     }

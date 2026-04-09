@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
+use std::{borrow::Cow, collections::HashMap, fmt::Debug, pin::Pin, sync::LazyLock};
 
 use crate::{EvalError, FnCallError};
 
@@ -10,8 +10,118 @@ pub type FnArgs<'a> = &'a [Value<'a>];
 /// The result of a function call, which can either be a successful [`Value`] value or an error if the function call fails.
 pub type FnResult<'a> = Result<Value<'a>, FnCallError>;
 
-/// The type of a function callback, takes a slice of arguments and returns a result or an error.
-pub type FnCallback = for<'a> fn(FnArgs<'a>) -> FnResult<'a>;
+pub trait SyncFnCallback: for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync {
+    fn clone_box(&self) -> Box<dyn SyncFnCallback>;
+}
+
+impl<T> SyncFnCallback for T
+where
+    T: for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync + Clone + 'static,
+{
+    fn clone_box(&self) -> Box<dyn SyncFnCallback> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn SyncFnCallback> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+pub trait AsyncFnCallback:
+    for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>> + Send + Sync
+{
+    fn clone_box(&self) -> Box<dyn AsyncFnCallback>;
+}
+
+impl<T> AsyncFnCallback for T
+where
+    T: for<'a> Fn(FnArgs<'a>) -> Pin<Box<dyn Future<Output = FnResult<'a>> + Send + 'a>>
+        + Send
+        + Sync
+        + Clone
+        + 'static,
+{
+    fn clone_box(&self) -> Box<dyn AsyncFnCallback> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn AsyncFnCallback> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+#[derive(Clone)]
+pub enum FnCallback {
+    Sync(Box<dyn SyncFnCallback>),
+    Async(Box<dyn AsyncFnCallback>),
+}
+
+impl FnCallback {
+    pub fn new_sync(callback: impl SyncFnCallback + 'static) -> Self {
+        Self::Sync(Box::new(callback))
+    }
+
+    pub fn new_async(callback: impl AsyncFnCallback + 'static) -> Self {
+        Self::Async(Box::new(callback))
+    }
+
+    /// Call this [`FnCallback`] in a synchronous context.
+    ///
+    /// ## Arguments
+    ///
+    /// - `args`: The arguments to pass to the function callback.
+    ///
+    /// ## Returns
+    ///
+    /// The return value of the function call.
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if the underlying function returns an error, or if this [`FnCallback`] is
+    /// an async function which cannot be called in a synchronous context.
+    pub fn call_sync<'a>(&self, args: FnArgs<'a>) -> FnResult<'a> {
+        match self {
+            Self::Sync(cb) => cb(args),
+            Self::Async(_) => Err(FnCallError {
+                fn_name: "<async function>".to_string(),
+                reason: EvalError::CallSyncinAsync.into(),
+            }),
+        }
+    }
+
+    /// Call this [`FnCallback`] in an asynchronous context.
+    ///
+    /// ## Arguments
+    ///
+    /// - `args`: The arguments to pass to the function callback.
+    ///
+    /// ## Returns
+    ///
+    /// The return value of the function call.
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if the underlying function returns an error.
+    pub async fn call_async<'a>(&self, args: FnArgs<'a>) -> FnResult<'a> {
+        match self {
+            Self::Sync(cb) => cb(args),
+            Self::Async(cb) => cb(args).await,
+        }
+    }
+}
+
+impl Debug for FnCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sync(_) => write!(f, "SyncFnCallback"),
+            Self::Async(_) => write!(f, "AsyncFnCallback"),
+        }
+    }
+}
 
 /// A mapping of function names to their corresponding callback implementations,
 /// used for evaluating function calls.
@@ -20,15 +130,15 @@ pub type VTable = HashMap<&'static str, FnCallback>;
 /// The default function table, containing built-in functions like `length`, `startsWith`, etc.
 pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
     let it: VTable = HashMap::from([
-        ("matches", matches as FnCallback),
-        ("len", len),
-        ("startsWith", starts_with),
-        ("endsWith", ends_with),
-        ("contains", contains),
-        ("bool", into_bool),
-        ("string", into_string),
-        ("int", into_int),
-        ("float", into_float),
+        ("matches", FnCallback::new_sync(matches)),
+        ("len", FnCallback::new_sync(len)),
+        ("startsWith", FnCallback::new_sync(starts_with)),
+        ("endsWith", FnCallback::new_sync(ends_with)),
+        ("contains", FnCallback::new_sync(contains)),
+        ("bool", FnCallback::new_sync(into_bool)),
+        ("string", FnCallback::new_sync(into_string)),
+        ("int", FnCallback::new_sync(into_int)),
+        ("float", FnCallback::new_sync(into_float)),
     ]);
     it
 });

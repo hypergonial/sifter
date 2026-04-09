@@ -185,7 +185,7 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
         .map(|res| res.map(Cow::into_owned))
         .collect::<Result<Vec<_>, _>>()?;
 
-    func(&args)
+    func.call_sync(&args)
         .map_err(EvalError::FnCallError)
         .map(|l| Cow::Owned(l.into_owned()))
 }
