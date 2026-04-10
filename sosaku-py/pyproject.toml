@@ -30,7 +30,7 @@ dev = [
     "pytest>=9.0",
     "ruff>=0.15",
     "uv>=0.11",
-    "maturin>=1.12,<2.0",
+    "maturin>=1.13,<2.0",
 ]
 
 [tool.ruff]
@@ -86,5 +86,5 @@ reportUninitializedInstanceVariable = "error"
 reportShadowedImports = "warning"
 
 [build-system]
-requires = ["maturin>=1.12,<2.0"]
+requires = ["maturin>=1.13,<2.0"]
 build-backend = "maturin"
