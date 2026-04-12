@@ -132,8 +132,8 @@ jobs:
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
         shell: pwsh
         run: |
-          rm -rf target/artifacts
-          mkdir target/artifacts
+          Remove-Item -Recurse -Force target/artifacts -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path target/artifacts | Out-Null
           7z a "target/artifacts/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }}" ${{ steps.binary_path.outputs.binary_path }}
 
       - name: Post Setup | Prepare artifacts [-nix]
