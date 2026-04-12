@@ -119,7 +119,7 @@ jobs:
           # Stuff compiled in cross is compiled in a container and the target folder is at root
           if is_cross:
               print(f"Cross-compilation detected, adjusting binary path for cross")
-              binary_path = workspace_folder.removesuffix("/") + "/" + binary_path.removeprefix("/target/")
+              binary_path = workspace_folder.removesuffix("/") + "/" + binary_path.removeprefix("target/")
 
           print(f"Resolved binary path: {binary_path}")
 
