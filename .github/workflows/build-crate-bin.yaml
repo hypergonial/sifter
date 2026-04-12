@@ -130,11 +130,11 @@ jobs:
       - name: Post Setup | Prepare artifacts [Windows]
         if: matrix.os == 'windows-latest'
         working-directory: ${{ steps.workspace_folder.outputs.workspace_folder }}
-        shell: bash
+        shell: pwsh
         run: |
           rm -rf target/artifacts
           mkdir target/artifacts
-          7z a target/artifacts/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }} ${{ steps.binary_path.outputs.binary_path }}
+          7z a "target/artifacts/${{ inputs.crate-name }}-${{ inputs.version }}-${{ matrix.name }}" ${{ steps.binary_path.outputs.binary_path }}
 
       - name: Post Setup | Prepare artifacts [-nix]
         if: matrix.os != 'windows-latest'
