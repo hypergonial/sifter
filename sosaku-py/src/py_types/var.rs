@@ -75,7 +75,11 @@ impl PyVarAccess {
     ) -> PyResult<PyJsonValue> {
         Ok(self
             .inner
-            .access_from_bindings(&sosaku::Env::new().bind_multiple(bindings).build())
+            .access_from_bindings(
+                &sosaku::Env::<PyJsonValue>::new()
+                    .bind_multiple(bindings)
+                    .build(),
+            )
             .map_err(|e| PySosakuError::from(sosaku::EvalError::from(e)))?
             .into_owned())
     }

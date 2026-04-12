@@ -627,7 +627,7 @@ mod tests {
         let mut vtable = DEFAULT_VTABLE.clone();
         vtable.insert("asyncFunc", callback);
 
-        let env = Env::new()
+        let env = Env::<Value>::new()
             .use_vtable(vtable)
             .bind("x", Value::Int(42))
             .build();
@@ -643,7 +643,7 @@ mod tests {
         let mut vtable = DEFAULT_VTABLE.clone();
         vtable.insert("asyncFunc", callback);
 
-        let env = Env::new()
+        let env = Env::<Value>::new()
             .use_vtable(vtable)
             .bind("x", Value::Int(42))
             .build();

@@ -1,7 +1,8 @@
 use std::{
     borrow::Cow,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fmt::{Debug, Display},
+    hash::BuildHasher,
 };
 
 #[cfg(feature = "serde_json")]
@@ -329,6 +330,88 @@ where
         Self::Object(
             iter.into_iter()
                 .map(|(k, v)| (k.into(), v))
+                .collect::<BTreeMap<String, Value<'_>>>(),
+        )
+    }
+}
+
+impl From<String> for Value<'_> {
+    fn from(s: String) -> Self {
+        Self::String(Cow::Owned(s))
+    }
+}
+
+impl<'a> From<&'a str> for Value<'a> {
+    fn from(s: &'a str) -> Self {
+        Self::String(Cow::Borrowed(s))
+    }
+}
+
+impl From<bool> for Value<'_> {
+    fn from(b: bool) -> Self {
+        Self::Bool(b)
+    }
+}
+
+impl From<i64> for Value<'_> {
+    fn from(i: i64) -> Self {
+        Self::Int(i)
+    }
+}
+
+impl From<f64> for Value<'_> {
+    fn from(f: f64) -> Self {
+        Self::Float(f)
+    }
+}
+
+impl From<i32> for Value<'_> {
+    fn from(i: i32) -> Self {
+        Self::Int(i64::from(i))
+    }
+}
+
+impl From<f32> for Value<'_> {
+    fn from(f: f32) -> Self {
+        Self::Float(f64::from(f))
+    }
+}
+
+impl From<()> for Value<'_> {
+    fn from((): ()) -> Self {
+        Self::Null
+    }
+}
+
+impl<V: Into<Self>> From<Vec<V>> for Value<'_> {
+    fn from(vec: Vec<V>) -> Self {
+        Self::Array(vec.into_iter().map(Into::into).collect())
+    }
+}
+
+impl<K, V> From<BTreeMap<K, V>> for Value<'_>
+where
+    K: Into<String>,
+    V: Into<Self>,
+{
+    fn from(map: BTreeMap<K, V>) -> Self {
+        Self::Object(
+            map.into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect::<BTreeMap<String, Value<'_>>>(),
+        )
+    }
+}
+
+impl<K, V, S: BuildHasher> From<HashMap<K, V, S>> for Value<'_>
+where
+    K: Into<String>,
+    V: Into<Self>,
+{
+    fn from(map: HashMap<K, V, S>) -> Self {
+        Self::Object(
+            map.into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
                 .collect::<BTreeMap<String, Value<'_>>>(),
         )
     }

@@ -373,8 +373,8 @@ mod tests {
     #[test]
     fn test_var_access_from_bindings() {
         let env = Env::<serde_json::Value>::new()
-            .bind_ref("test", &TEST_VALUE_1)
-            .bind_ref("other", &TEST_VALUE_2)
+            .bind_ref("test", &*TEST_VALUE_1)
+            .bind_ref("other", &*TEST_VALUE_2)
             .build();
 
         let var_access = VarAccess::try_from("test.foo.bar[1].baz").unwrap();

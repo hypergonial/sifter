@@ -46,7 +46,11 @@ impl PyExp {
     pub fn eval(&self, bindings: HashMap<String, PyJsonValue>) -> PyResult<PyJsonValue> {
         Ok(self
             .inner
-            .eval(&sosaku::Env::new().bind_multiple(bindings).build())
+            .eval(
+                &sosaku::Env::<PyJsonValue>::new()
+                    .bind_multiple(bindings)
+                    .build(),
+            )
             .map_err(PySosakuError::from)?
             .into_owned()
             .into())

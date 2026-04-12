@@ -54,8 +54,8 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A reference to the variable bindings, which is a `HashMap` mapping variable names
-    ///   to their corresponding JSON values.
+    /// A reference to the variable bindings, which is a `HashMap` mapping variable names
+    /// to their corresponding JSON values.
     #[inline]
     pub const fn bindings(&self) -> &HashMap<Box<str>, Cow<'var, V>> {
         &self.bindings
@@ -65,7 +65,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A reference to the `VTable` containing the function definitions available in this environment.
+    /// A reference to the `VTable` containing the function definitions available in this environment.
     #[inline]
     pub(crate) const fn vtable(&self) -> &VTable {
         &self.vtable
@@ -133,9 +133,9 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
-    pub fn bind(&mut self, name: impl Into<Box<str>>, value: V) -> &mut Self {
-        self.bindings.insert(name.into(), Cow::Owned(value));
+    /// A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn bind(&mut self, name: impl Into<Box<str>>, value: impl Into<V>) -> &mut Self {
+        self.bindings.insert(name.into(), Cow::Owned(value.into()));
         self
     }
 
@@ -149,13 +149,13 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    /// A mutable reference to this [`EnvBuilder`] for method chaining.
     pub fn bind_multiple(
         &mut self,
-        vars: impl IntoIterator<Item = (impl Into<Box<str>>, V)>,
+        vars: impl IntoIterator<Item = (impl Into<Box<str>>, impl Into<V>)>,
     ) -> &mut Self {
         for (name, value) in vars {
-            self.bindings.insert(name.into(), Cow::Owned(value));
+            self.bindings.insert(name.into(), Cow::Owned(value.into()));
         }
         self
     }
@@ -173,9 +173,10 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
-    pub fn bind_ref(&mut self, name: impl Into<Box<str>>, value: &'var V) -> &mut Self {
-        self.bindings.insert(name.into(), Cow::Borrowed(value));
+    /// A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn bind_ref(&mut self, name: impl Into<Box<str>>, value: impl Into<&'var V>) -> &mut Self {
+        self.bindings
+            .insert(name.into(), Cow::Borrowed(value.into()));
         self
     }
 
@@ -192,13 +193,14 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    /// A mutable reference to this [`EnvBuilder`] for method chaining.
     pub fn bind_ref_multiple(
         &mut self,
-        vars: impl IntoIterator<Item = (impl Into<Box<str>>, &'var V)>,
+        vars: impl IntoIterator<Item = (impl Into<Box<str>>, impl Into<&'var V>)>,
     ) -> &mut Self {
         for (name, value) in vars {
-            self.bindings.insert(name.into(), Cow::Borrowed(value));
+            self.bindings
+                .insert(name.into(), Cow::Borrowed(value.into()));
         }
         self
     }
@@ -242,7 +244,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # Returns
     ///
-    /// - A mutable reference to this [`EnvBuilder`] for method chaining.
+    /// A mutable reference to this [`EnvBuilder`] for method chaining.
     pub fn use_vtable(&mut self, vtable: VTable) -> &mut Self {
         self.vtable = Some(vtable);
         self
@@ -257,7 +259,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// # Returns
     ///
-    /// - An [`Env`] instance containing the variable bindings and vtable configured in this builder.
+    /// An [`Env`] instance containing the variable bindings and vtable configured in this builder.
     #[must_use]
     pub fn build(&mut self) -> Env<'var, V> {
         // Rust is likely to optimize away the .clone() here since EnvBuilder is typically dropped after this
