@@ -167,7 +167,7 @@ jobs:
           pattern: "!wheels-*" # Exclude wheels
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # body_path: RELEASE.md
           files: artifacts/**/*
