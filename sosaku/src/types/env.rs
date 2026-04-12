@@ -36,7 +36,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     /// // Note: The `serde` feature must be enabled to use
     /// // `serde_json::Value` as the JSON value type.
     /// use sosaku::Env;
-    /// let env = Env::new()
+    /// let env = Env::<serde_json::Value>::new()
     ///     .bind("x", serde_json::json!(42))
     ///     .bind("y", serde_json::json!("hello"))
     ///     .build();
@@ -80,7 +80,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
 /// // Note: The `serde` feature must be enabled to use
 /// // `serde_json::Value` as the JSON value type.
 /// use sosaku::Env;
-/// let env = Env::new()
+/// let env = Env::<serde_json::Value>::new()
 ///     .bind("x", serde_json::json!(42))
 ///     .bind("y", serde_json::json!("hello"))
 ///     .build();
@@ -231,7 +231,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     /// # #[cfg(feature = "serde_json")] {
     /// let mut custom_vtable = DEFAULT_VTABLE.clone();
     /// custom_vtable.insert("my_func", FnCallback::new_sync(my_func));
-    /// let env = Env::new()
+    /// let env = Env::<serde_json::Value>::new()
     ///    .bind("x", serde_json::json!(42))
     ///    .use_vtable(custom_vtable)
     ///    .build();
