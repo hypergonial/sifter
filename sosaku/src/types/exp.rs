@@ -111,7 +111,7 @@ impl<'exp> Exp<'exp> {
     /// If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
     pub fn eval<'var, 'out, V: JsonValue + Clone + Debug>(
         &'exp self,
-        env: &'var Env<'var, V>,
+        env: &'var Env<'var, '_, V>,
     ) -> Result<Cow<'out, Value<'out>>, EvalError>
     where
         'exp: 'out,
@@ -140,7 +140,7 @@ impl<'exp> Exp<'exp> {
     /// If there was an error during evaluation, such as a type error or undefined variable, an [`EvalError`] will be returned.
     pub async fn eval_async<'var, 'out, V: JsonValue + Clone + Debug>(
         &'exp self,
-        env: &'var Env<'var, V>,
+        env: &'var Env<'var, '_, V>,
     ) -> Result<Cow<'out, Value<'out>>, EvalError>
     where
         'exp: 'out,

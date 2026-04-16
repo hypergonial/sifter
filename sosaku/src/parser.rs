@@ -298,11 +298,7 @@ fn parse_right_assoc<'a, 'b, E: ParseError<&'a str>>(
 
     let mut stack = Vec::new();
 
-    loop {
-        // Break out of the loop if no operator was matched
-        let Ok((i, op)) = try_ops(ops, input) else {
-            break;
-        };
+    while let Ok((i, op)) = try_ops(ops, input) {
         // RHS should always exist
         let (i, rhs) = parser.parse(i)?;
         stack.push((op, current));

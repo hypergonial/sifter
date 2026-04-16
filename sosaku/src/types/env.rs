@@ -14,9 +14,9 @@ macro_rules! define_env {
         ///
         /// To construct an Env, use `Env::new()` to create an [`EnvBuilder`], then call `build()`.
         #[derive(::std::fmt::Debug, ::std::clone::Clone)]
-        pub struct Env<'var, V: crate::types::json::JsonValue + ::std::clone::Clone + ::std::fmt::Debug $(=$default)?> {
+        pub struct Env<'var, 'vtable, V: crate::types::json::JsonValue + ::std::clone::Clone + ::std::fmt::Debug $(=$default)?> {
             bindings: ::std::collections::HashMap<::std::boxed::Box<::core::primitive::str>, ::std::borrow::Cow<'var, V>>,
-            vtable: crate::functions::VTable,
+            vtable: ::std::borrow::Cow<'vtable, crate::functions::VTable>,
         }
     };
 }
@@ -27,7 +27,7 @@ define_env!(::serde_json::Value);
 #[cfg(not(feature = "serde_json"))]
 define_env!();
 
-impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
+impl<'var, 'vtable, V: JsonValue + Clone + Debug> Env<'var, 'vtable, V> {
     /// Create a new [`EnvBuilder`] for constructing an [`Env`].
     ///
     /// # Example
@@ -46,7 +46,7 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     /// # }
     /// ```
     #[expect(clippy::new_ret_no_self)]
-    pub fn new() -> EnvBuilder<'var, V> {
+    pub fn new() -> EnvBuilder<'var, 'vtable, V> {
         EnvBuilder::new()
     }
 
@@ -67,8 +67,8 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
     ///
     /// A reference to the `VTable` containing the function definitions available in this environment.
     #[inline]
-    pub(crate) const fn vtable(&self) -> &VTable {
-        &self.vtable
+    pub(crate) fn vtable(&self) -> &VTable {
+        self.vtable.as_ref()
     }
 }
 
@@ -90,12 +90,12 @@ impl<'var, V: JsonValue + Clone + Debug> Env<'var, V> {
 /// # }
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct EnvBuilder<'var, V: JsonValue + Clone + Debug> {
+pub struct EnvBuilder<'var, 'vtable, V: JsonValue + Clone + Debug> {
     bindings: HashMap<Box<str>, Cow<'var, V>>,
-    vtable: Option<VTable>,
+    vtable: Option<Cow<'vtable, VTable>>,
 }
 
-impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
+impl<'var, 'vtable, V: JsonValue + Clone + Debug> EnvBuilder<'var, 'vtable, V> {
     fn new() -> Self {
         Self {
             bindings: HashMap::new(),
@@ -246,7 +246,52 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// A mutable reference to this [`EnvBuilder`] for method chaining.
     pub fn use_vtable(&mut self, vtable: VTable) -> &mut Self {
-        self.vtable = Some(vtable);
+        self.vtable = Some(Cow::Owned(vtable));
+        self
+    }
+
+    /// Use a custom vtable for this environment instead of the default one.
+    /// This allows you to override the default function definitions or add new ones.
+    ///
+    /// Tip: You can create a custom vtable by cloning the default one and modifying it, e.g.:
+    /// ```rust
+    /// use sosaku::{Value, Env, VTable, DEFAULT_VTABLE, FnArgs, FnResult, FnCallback, FnCallError, EvalError};
+    ///
+    /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
+    ///     // Your function implementation goes here
+    ///     if args.is_empty() {
+    ///         return Err(FnCallError {
+    ///             fn_name: "my_func".to_string(),
+    ///             reason: EvalError::ArgumentCount {
+    ///                 expected: 0,
+    ///                 got: args.len(),
+    ///             }
+    ///             .into(),
+    ///         });
+    ///     }
+    ///
+    ///     Ok(Value::Int(42))
+    /// }
+    ///
+    /// # #[cfg(feature = "serde_json")] {
+    /// let mut custom_vtable = DEFAULT_VTABLE.clone();
+    /// custom_vtable.insert("my_func", FnCallback::new_sync(my_func));
+    /// let env = Env::<serde_json::Value>::new()
+    ///    .bind("x", serde_json::json!(42))
+    ///    .use_vtable_ref(&custom_vtable)
+    ///    .build();
+    /// # }
+    /// ```
+    ///
+    /// # Parameters
+    ///
+    /// - `vtable`: The custom vtable to use for this environment.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to this [`EnvBuilder`] for method chaining.
+    pub fn use_vtable_ref(&mut self, vtable: &'vtable VTable) -> &mut Self {
+        self.vtable = Some(Cow::Borrowed(vtable));
         self
     }
 
@@ -261,13 +306,13 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     ///
     /// An [`Env`] instance containing the variable bindings and vtable configured in this builder.
     #[must_use]
-    pub fn build(&mut self) -> Env<'var, V> {
+    pub fn build(&mut self) -> Env<'var, 'vtable, V> {
         // Rust is likely to optimize away the .clone() here since EnvBuilder is typically dropped after this
         // See: https://docs.rs/derive_builder/0.20.2/derive_builder/#-performance-considerations
         let vtable = self
             .vtable
             .clone()
-            .unwrap_or_else(|| DEFAULT_VTABLE.clone());
+            .unwrap_or_else(|| Cow::Borrowed(&*DEFAULT_VTABLE));
 
         Env {
             bindings: self.bindings.clone(),
@@ -276,7 +321,7 @@ impl<'var, V: JsonValue + Clone + Debug> EnvBuilder<'var, V> {
     }
 }
 
-impl<K, V, I> From<I> for Env<'_, V>
+impl<K, V, I> From<I> for Env<'_, '_, V>
 where
     K: Into<Box<str>>,
     V: JsonValue + Clone + Debug,
@@ -288,7 +333,7 @@ where
                 .into_iter()
                 .map(|(k, v)| (k.into(), Cow::Owned(v)))
                 .collect(),
-            vtable: DEFAULT_VTABLE.clone(),
+            vtable: Cow::Borrowed(&*DEFAULT_VTABLE),
         }
     }
 }

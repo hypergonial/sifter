@@ -230,7 +230,7 @@ impl VarAccess {
     /// - If there was an error accessing the value, such as a type mismatch or index out of bounds
     pub fn access_from_bindings<'a, V: JsonValue + Debug + Clone>(
         &self,
-        env: &'a Env<'a, V>,
+        env: &'a Env<'a, '_, V>,
     ) -> Result<Cow<'a, V>, VarAccessError> {
         if self.names.is_empty() {
             return Ok(Cow::Owned(V::null()));

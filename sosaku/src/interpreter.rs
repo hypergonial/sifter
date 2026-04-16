@@ -16,7 +16,7 @@ const fn out(value: Value<'_>) -> Result<Cow<'_, Value<'_>>, EvalError> {
 
 fn eval_varaccess<'a: 'c, 'b: 'c, 'c, V: JsonValue + Clone + Debug>(
     var: &'a VarAccess,
-    env: &'b Env<'b, V>,
+    env: &'b Env<'b, '_, V>,
 ) -> Result<Cow<'c, Value<'c>>, EvalError> {
     let obj = var
         .access_from_bindings(env)
@@ -265,7 +265,7 @@ fn eval_object<'exp: 'out, 'out>(
 fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
     function_name: &'exp str,
     args_len: usize,
-    env: &Env<'var, impl JsonValue + Clone + Debug>,
+    env: &Env<'var, '_, impl JsonValue + Clone + Debug>,
     values: &mut Vec<Cow<'out, Value<'out>>>,
 ) -> Result<(), EvalError> {
     let func = env
@@ -293,7 +293,7 @@ fn eval_fncall<'exp: 'out, 'var: 'out, 'out>(
 async fn eval_fncall_async<'exp: 'out, 'var: 'out, 'out>(
     function_name: &'exp str,
     args_len: usize,
-    env: &Env<'var, impl JsonValue + Clone + Debug>,
+    env: &Env<'var, '_, impl JsonValue + Clone + Debug>,
     values: &mut Vec<Cow<'out, Value<'out>>>,
 ) -> Result<(), EvalError> {
     let func = env
@@ -321,7 +321,7 @@ async fn eval_fncall_async<'exp: 'out, 'var: 'out, 'out>(
 
 pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     exp: &'exp Exp<'exp>,
-    env: &'var Env<'var, V>,
+    env: &'var Env<'var, '_, V>,
 ) -> Result<Cow<'out, Value<'out>>, EvalError> {
     let mut stack = vec![Frame::ToEval(exp)];
     let mut values: Vec<Cow<'out, Value<'out>>> = Vec::new();
@@ -358,7 +358,7 @@ pub(crate) fn eval<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
 
 pub(crate) async fn eval_async<'exp: 'out, 'var: 'out, 'out, V: JsonValue + Clone + Debug>(
     exp: &'exp Exp<'exp>,
-    env: &'var Env<'var, V>,
+    env: &'var Env<'var, '_, V>,
 ) -> Result<Cow<'out, Value<'out>>, EvalError> {
     let mut stack = vec![Frame::ToEval(exp)];
     let mut values: Vec<Cow<'out, Value<'out>>> = Vec::new();
