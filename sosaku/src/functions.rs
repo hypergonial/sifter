@@ -6,6 +6,8 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use base64::Engine;
+
 use crate::{EvalError, FnCallError};
 
 use super::types::Value;
@@ -14,7 +16,7 @@ use super::types::Value;
 pub type FnArgs<'a> = &'a [Value<'a>];
 
 /// The result of a function call, which can either be a successful [`Value`] value or an error if the function call fails.
-pub type FnResult<'a> = Result<Value<'a>, FnCallError>;
+pub type FnResult<'a> = Result<Value<'a>, EvalError>;
 
 pub type SyncFnCallback = dyn for<'a> Fn(FnArgs<'a>) -> FnResult<'a> + Send + Sync;
 
@@ -111,9 +113,16 @@ impl FnCallback {
     ///
     /// Returns an error if the underlying function returns an error, or if this [`FnCallback`] is
     /// an async function which cannot be called in a synchronous context.
-    pub(crate) fn call_sync<'a>(&self, name: &str, args: FnArgs<'a>) -> FnResult<'a> {
+    pub(crate) fn call_sync<'a>(
+        &self,
+        name: &str,
+        args: FnArgs<'a>,
+    ) -> Result<Value<'a>, FnCallError> {
         match self {
-            Self::Sync(cb) => cb(args),
+            Self::Sync(cb) => cb(args).map_err(|e| FnCallError {
+                fn_name: name.to_string(),
+                reason: Box::new(e),
+            }),
             Self::Async(_) => Err(FnCallError {
                 fn_name: name.to_string(),
                 reason: EvalError::CallSyncinAsync.into(),
@@ -135,10 +144,20 @@ impl FnCallback {
     /// ## Errors
     ///
     /// Returns an error if the underlying function returns an error.
-    pub(crate) async fn call_async<'a>(&self, _name: &str, args: FnArgs<'a>) -> FnResult<'a> {
+    pub(crate) async fn call_async<'a>(
+        &self,
+        name: &str,
+        args: FnArgs<'a>,
+    ) -> Result<Value<'a>, FnCallError> {
         match self {
-            Self::Sync(cb) => cb(args),
-            Self::Async(cb) => cb(args).await,
+            Self::Sync(cb) => cb(args).map_err(|e| FnCallError {
+                fn_name: name.to_string(),
+                reason: Box::new(e),
+            }),
+            Self::Async(cb) => cb(args).await.map_err(|e| FnCallError {
+                fn_name: name.to_string(),
+                reason: Box::new(e),
+            }),
         }
     }
 }
@@ -168,42 +187,43 @@ pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
         ("string", FnCallback::new_sync(into_string)),
         ("int", FnCallback::new_sync(into_int)),
         ("float", FnCallback::new_sync(into_float)),
+        ("base64Encode", FnCallback::new_sync(base64_encode)),
+        ("base64Decode", FnCallback::new_sync(base64_decode)),
     ]);
     it
 });
 
-fn unary<'a>(
-    fn_name: &'static str,
-    args: FnArgs<'a>,
-    function: impl Fn(&Value<'a>) -> FnResult<'a>,
-) -> FnResult<'a> {
+fn unary<'a>(args: FnArgs<'a>, function: impl Fn(&Value<'a>) -> FnResult<'a>) -> FnResult<'a> {
     if args.len() != 1 {
-        return Err(FnCallError {
-            fn_name: fn_name.to_string(),
-            reason: EvalError::ArgumentCount {
-                expected: 1,
-                got: args.len(),
-            }
-            .into(),
+        return Err(EvalError::ArgumentCount {
+            expected: 1,
+            got: args.len(),
         });
     }
 
     function(&args[0])
 }
 
+fn string_unary<'a>(args: FnArgs<'a>, function: impl Fn(&str) -> FnResult<'a>) -> FnResult<'a> {
+    unary(args, |v| {
+        let Value::String(s) = v else {
+            return Err(EvalError::TypeError {
+                message: format!("Expected a string argument, got: '{}'", v.type_name()),
+            });
+        };
+
+        function(s)
+    })
+}
+
 fn binary<'a>(
-    fn_name: &'static str,
     args: FnArgs<'a>,
     function: impl Fn(&Value<'a>, &Value<'a>) -> FnResult<'a>,
 ) -> FnResult<'a> {
     if args.len() != 2 {
-        return Err(FnCallError {
-            fn_name: fn_name.to_string(),
-            reason: EvalError::ArgumentCount {
-                expected: 2,
-                got: args.len(),
-            }
-            .into(),
+        return Err(EvalError::ArgumentCount {
+            expected: 2,
+            got: args.len(),
         });
     }
 
@@ -211,33 +231,24 @@ fn binary<'a>(
 }
 
 fn string_binary<'a>(
-    fn_name: &'static str,
     args: FnArgs<'a>,
     function: impl Fn(&str, &str) -> FnResult<'a>,
 ) -> FnResult<'a> {
-    binary(fn_name, args, |v1, v2| {
+    binary(args, |v1, v2| {
         let Value::String(s1) = v1 else {
-            return Err(FnCallError {
-                fn_name: fn_name.to_string(),
-                reason: EvalError::TypeError {
-                    message: format!(
-                        "Expected a string as the first argument, got: '{}'",
-                        v1.type_name()
-                    ),
-                }
-                .into(),
+            return Err(EvalError::TypeError {
+                message: format!(
+                    "Expected a string as the first argument, got: '{}'",
+                    v1.type_name()
+                ),
             });
         };
         let Value::String(s2) = v2 else {
-            return Err(FnCallError {
-                fn_name: fn_name.to_string(),
-                reason: EvalError::TypeError {
-                    message: format!(
-                        "Expected a string as the second argument, got: '{}'",
-                        v2.type_name()
-                    ),
-                }
-                .into(),
+            return Err(EvalError::TypeError {
+                message: format!(
+                    "Expected a string as the second argument, got: '{}'",
+                    v2.type_name()
+                ),
             });
         };
 
@@ -246,21 +257,17 @@ fn string_binary<'a>(
 }
 
 fn len(args: FnArgs<'_>) -> FnResult<'_> {
-    unary("len", args, |v| {
+    unary(args, |v| {
         let len = match v {
             Value::String(s) => s.chars().count(),
             Value::Array(arr) => arr.len(),
             Value::Object(obj) => obj.len(),
             v => {
-                return Err(FnCallError {
-                    fn_name: "len".to_string(),
-                    reason: EvalError::TypeError {
-                        message: format!(
-                            "Expected a string, array, or object, got: '{}'",
-                            v.type_name()
-                        ),
-                    }
-                    .into(),
+                return Err(EvalError::TypeError {
+                    message: format!(
+                        "Expected a string, array, or object, got: '{}'",
+                        v.type_name()
+                    ),
                 });
             }
         };
@@ -269,56 +276,64 @@ fn len(args: FnArgs<'_>) -> FnResult<'_> {
 }
 
 fn starts_with(args: FnArgs<'_>) -> FnResult<'_> {
-    string_binary("startsWith", args, |s, other| {
-        Ok(Value::Bool(s.starts_with(other)))
-    })
+    string_binary(args, |s, other| Ok(Value::Bool(s.starts_with(other))))
 }
 
 fn ends_with(args: FnArgs<'_>) -> FnResult<'_> {
-    string_binary("endsWith", args, |s, other| {
-        Ok(Value::Bool(s.ends_with(other)))
-    })
+    string_binary(args, |s, other| Ok(Value::Bool(s.ends_with(other))))
 }
 
 fn contains(args: FnArgs<'_>) -> FnResult<'_> {
-    binary("contains", args, |v1, v2| {
-        match (v1, v2) {
+    binary(args, |v1, v2| match (v1, v2) {
         (Value::String(s), Value::String(sub)) => Ok(Value::Bool(s.contains(sub.as_ref()))),
         (Value::Array(arr), item) => Ok(Value::Bool(arr.iter().any(|e| e == item))),
         (Value::Object(obj), Value::String(key)) => Ok(Value::Bool(obj.contains_key(key.as_ref()))),
-        _ => Err(FnCallError {
-            fn_name: "contains".to_string(),
-            reason: EvalError::TypeError {
-                message: format!("Expected (string, string), (array, value), or (object, string) arguments, got: ('{}', '{}')", v1.type_name(), v2.type_name()),
-            }
-            .into(),
+        _ => Err(EvalError::TypeError {
+            message: format!(
+                "Expected (string, string), (array, value), or (object, string) arguments, got: ('{}', '{}')",
+                v1.type_name(),
+                v2.type_name()
+            ),
         }),
-    }
     })
 }
 
 fn matches(args: FnArgs<'_>) -> FnResult<'_> {
-    string_binary("matches", args, |s, pattern| {
-        let re = regex::Regex::new(pattern).map_err(|e| FnCallError {
-            fn_name: "matches".to_string(),
-            reason: EvalError::RegexError {
-                message: format!("Invalid regex pattern: '{e}'"),
-            }
-            .into(),
+    string_binary(args, |s, pattern| {
+        let re = regex::Regex::new(pattern).map_err(|e| EvalError::RegexError {
+            message: format!("Invalid regex pattern: '{e}'"),
         })?;
         Ok(Value::Bool(re.is_match(s)))
     })
 }
 
+fn base64_encode(args: FnArgs<'_>) -> FnResult<'_> {
+    string_unary(args, |s| {
+        Ok(Value::String(Cow::Owned(
+            base64::engine::general_purpose::STANDARD.encode(s.as_bytes()),
+        )))
+    })
+}
+
+fn base64_decode(args: FnArgs<'_>) -> FnResult<'_> {
+    string_unary(args, |s| {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(s.as_bytes())
+            .map_err(|e| EvalError::ValueError {
+                message: format!("Invalid base64 string: '{e}'"),
+            })?;
+        let decoded = String::from_utf8(bytes).map_err(|e| EvalError::ValueError {
+            message: format!("Decoded bytes are not valid UTF-8: '{e}'"),
+        })?;
+        Ok(Value::String(Cow::Owned(decoded)))
+    })
+}
+
 fn into_bool(args: FnArgs<'_>) -> FnResult<'_> {
     if args.len() != 1 {
-        return Err(FnCallError {
-            fn_name: "bool".to_string(),
-            reason: EvalError::ArgumentCount {
-                expected: 1,
-                got: args.len(),
-            }
-            .into(),
+        return Err(EvalError::ArgumentCount {
+            expected: 1,
+            got: args.len(),
         });
     }
 
@@ -327,13 +342,9 @@ fn into_bool(args: FnArgs<'_>) -> FnResult<'_> {
 
 fn into_string<'a>(args: FnArgs<'a>) -> FnResult<'a> {
     if args.len() != 1 {
-        return Err(FnCallError {
-            fn_name: "string".to_string(),
-            reason: EvalError::ArgumentCount {
-                expected: 1,
-                got: args.len(),
-            }
-            .into(),
+        return Err(EvalError::ArgumentCount {
+            expected: 1,
+            got: args.len(),
         });
     }
 
@@ -343,40 +354,32 @@ fn into_string<'a>(args: FnArgs<'a>) -> FnResult<'a> {
 }
 
 fn numeric_convert<'a, T>(
-    fn_name: &'static str,
     args: FnArgs<'a>,
     convert: impl Fn(&Value<'a>) -> Option<T>,
     wrap: impl Fn(T) -> Value<'a>,
 ) -> FnResult<'a> {
     if args.len() != 1 {
-        return Err(FnCallError {
-            fn_name: fn_name.to_string(),
-            reason: EvalError::ArgumentCount {
-                expected: 1,
-                got: args.len(),
-            }
-            .into(),
+        return Err(EvalError::ArgumentCount {
+            expected: 1,
+            got: args.len(),
         });
     }
 
     convert(&args[0])
-        .ok_or_else(|| FnCallError {
-            fn_name: fn_name.to_string(),
-            reason: EvalError::TypeError {
-                message: format!(
-                    "Expected a value that can be converted to {fn_name}, got {:?}",
-                    args[0]
-                ),
-            }
-            .into(),
+        .ok_or_else(|| EvalError::TypeError {
+            message: format!(
+                "Expected a value that can be converted to '{}', got '{:?}'",
+                std::any::type_name::<T>(),
+                args[0]
+            ),
         })
         .map(wrap)
 }
 
 fn into_int(args: FnArgs<'_>) -> FnResult<'_> {
-    numeric_convert("int", args, |v| i64::try_from(v).ok(), Value::Int)
+    numeric_convert(args, |v| i64::try_from(v).ok(), Value::Int)
 }
 
 fn into_float(args: FnArgs<'_>) -> FnResult<'_> {
-    numeric_convert("float", args, |v| f64::try_from(v).ok(), Value::Float)
+    numeric_convert(args, |v| f64::try_from(v).ok(), Value::Float)
 }

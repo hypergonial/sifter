@@ -214,14 +214,10 @@ impl<'var, 'vtable, V: JsonValue + Clone + Debug> EnvBuilder<'var, 'vtable, V> {
     ///
     /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
     ///     // Your function implementation goes here
-    ///     if args.is_empty() {
-    ///         return Err(FnCallError {
-    ///             fn_name: "my_func".to_string(),
-    ///             reason: EvalError::ArgumentCount {
-    ///                 expected: 0,
-    ///                 got: args.len(),
-    ///             }
-    ///             .into(),
+    ///     if !args.is_empty() {
+    ///         return Err(EvalError::ArgumentCount {
+    ///             expected: 0,
+    ///             got: args.len(),
     ///         });
     ///     }
     ///
@@ -259,14 +255,10 @@ impl<'var, 'vtable, V: JsonValue + Clone + Debug> EnvBuilder<'var, 'vtable, V> {
     ///
     /// fn my_func(args: FnArgs<'_>) -> FnResult<'_> {
     ///     // Your function implementation goes here
-    ///     if args.is_empty() {
-    ///         return Err(FnCallError {
-    ///             fn_name: "my_func".to_string(),
-    ///             reason: EvalError::ArgumentCount {
-    ///                 expected: 0,
-    ///                 got: args.len(),
-    ///             }
-    ///             .into(),
+    ///     if !args.is_empty() {
+    ///         return Err(EvalError::ArgumentCount {
+    ///             expected: 0,
+    ///             got: args.len(),
     ///         });
     ///     }
     ///
