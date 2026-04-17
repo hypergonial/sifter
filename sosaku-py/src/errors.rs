@@ -2,7 +2,7 @@ use std::{error::Error, fmt::Display};
 
 use pyo3::{
     Bound, IntoPyObject, IntoPyObjectExt, PyAny, Python,
-    exceptions::{PyNameError, PyTypeError, PyValueError},
+    exceptions::{PyException, PyNameError, PyTypeError, PyValueError},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +48,9 @@ impl<'py> IntoPyObject<'py> for PySosakuError {
                     "Cannot call an async function in a synchronous context",
                 )
                 .into_bound_py_any(py)?),
+                sosaku::EvalError::Custom { message } => {
+                    Ok(PyException::new_err(message).into_bound_py_any(py)?)
+                }
             },
         }
     }

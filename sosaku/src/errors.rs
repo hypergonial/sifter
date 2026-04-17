@@ -45,6 +45,8 @@ pub enum EvalError {
     ArgumentCount { expected: usize, got: usize },
     #[error("Cannot call an async function in a sync context")]
     CallSyncinAsync,
+    #[error("{message}")]
+    Custom { message: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
