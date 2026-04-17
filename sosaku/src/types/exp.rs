@@ -15,6 +15,7 @@ use crate::{
 /// Represents an Abstract Syntax Tree (AST) for sosaku expressions,
 /// which can be evaluated in a given environment to produce a literal value.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Exp<'a> {
     Literal(Value<'a>),
     FnCall(FunctionItem<'a>),

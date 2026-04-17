@@ -12,6 +12,7 @@ pub struct FnCallError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum VarAccessError {
     #[error("Variable access is empty")]
     EmptyAccess,
@@ -28,6 +29,7 @@ pub enum VarAccessError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum EvalError {
     #[error(transparent)]
     VarAccess(#[from] VarAccessError),
@@ -50,6 +52,7 @@ pub enum EvalError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error(transparent)]
     Eval(#[from] EvalError),
