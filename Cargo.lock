@@ -479,7 +479,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64",
  "nom",
@@ -493,7 +493,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "sosaku-py"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "pyo3",
  "sosaku",
