@@ -189,6 +189,10 @@ pub static DEFAULT_VTABLE: LazyLock<VTable> = LazyLock::new(|| {
         ("float", FnCallback::new_sync(into_float)),
         ("base64Encode", FnCallback::new_sync(base64_encode)),
         ("base64Decode", FnCallback::new_sync(base64_decode)),
+        ("replace", FnCallback::new_sync(replace)),
+        ("format", FnCallback::new_sync(format)),
+        ("join", FnCallback::new_sync(join)),
+        ("split", FnCallback::new_sync(split)),
     ]);
     it
 });
@@ -230,6 +234,20 @@ fn binary<'a>(
     function(&args[0], &args[1])
 }
 
+fn trinary<'a>(
+    args: FnArgs<'a>,
+    function: impl Fn(&Value<'a>, &Value<'a>, &Value<'a>) -> FnResult<'a>,
+) -> FnResult<'a> {
+    if args.len() != 3 {
+        return Err(EvalError::ArgumentCount {
+            expected: 3,
+            got: args.len(),
+        });
+    }
+
+    function(&args[0], &args[1], &args[2])
+}
+
 fn string_binary<'a>(
     args: FnArgs<'a>,
     function: impl Fn(&str, &str) -> FnResult<'a>,
@@ -253,6 +271,40 @@ fn string_binary<'a>(
         };
 
         function(s1, s2)
+    })
+}
+
+fn string_trinary<'a>(
+    args: FnArgs<'a>,
+    function: impl Fn(&str, &str, &str) -> FnResult<'a>,
+) -> FnResult<'a> {
+    trinary(args, |v1, v2, v3| {
+        let Value::String(s1) = v1 else {
+            return Err(EvalError::TypeError {
+                message: format!(
+                    "Expected a string as the first argument, got: '{}'",
+                    v1.type_name()
+                ),
+            });
+        };
+        let Value::String(s2) = v2 else {
+            return Err(EvalError::TypeError {
+                message: format!(
+                    "Expected a string as the second argument, got: '{}'",
+                    v2.type_name()
+                ),
+            });
+        };
+        let Value::String(s3) = v3 else {
+            return Err(EvalError::TypeError {
+                message: format!(
+                    "Expected a string as the third argument, got: '{}'",
+                    v3.type_name()
+                ),
+            });
+        };
+
+        function(s1, s2, s3)
     })
 }
 
@@ -305,6 +357,121 @@ fn matches(args: FnArgs<'_>) -> FnResult<'_> {
         })?;
         Ok(Value::Bool(re.is_match(s)))
     })
+}
+
+fn replace(args: FnArgs<'_>) -> FnResult<'_> {
+    string_trinary(args, |s, from, to| {
+        Ok(Value::String(Cow::Owned(s.replace(from, to))))
+    })
+}
+
+fn join(args: FnArgs<'_>) -> FnResult<'_> {
+    if args.len() != 2 {
+        return Err(EvalError::ArgumentCount {
+            expected: 2,
+            got: args.len(),
+        });
+    }
+
+    let Value::Array(ref arr) = args[0] else {
+        return Err(EvalError::TypeError {
+            message: format!("Expected an array argument, got: '{}'", args[0].type_name()),
+        });
+    };
+
+    let Value::String(sep) = &args[1] else {
+        return Err(EvalError::TypeError {
+            message: format!("Expected a string argument, got: '{}'", args[1].type_name()),
+        });
+    };
+
+    Ok(Value::String(Cow::Owned(
+        arr.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(sep.as_ref()),
+    )))
+}
+
+fn split(args: FnArgs<'_>) -> FnResult<'_> {
+    string_binary(args, |s, sep| {
+        Ok(Value::Array(
+            s.split(sep)
+                .map(|part| Value::String(Cow::Owned(part.to_string())))
+                .collect(),
+        ))
+    })
+}
+
+static FORMAT_PLACEHOLDER_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\{(\d+)\}").expect("Failed to compile format placeholder regex")
+});
+
+/// Example: format("{0} is {1}", "Rust", "awesome") -> "Rust is awesome"
+///
+/// Escape curly braces with double braces: "{{" or "}}" -> "{", "}"
+fn format(args: FnArgs<'_>) -> FnResult<'_> {
+    if args.is_empty() {
+        return Err(EvalError::ArgumentCount {
+            expected: 1,
+            got: 0,
+        });
+    }
+
+    let Value::String(format_str) = &args[0] else {
+        return Err(EvalError::TypeError {
+            message: format!(
+                "Expected a string as the first argument, got: '{}'",
+                args[0].type_name()
+            ),
+        });
+    };
+
+    let fmt_args = &args[1..]
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    // rough estimate to avoid too many reallocations
+    let mut new =
+        String::with_capacity(format_str.len() + fmt_args.iter().map(String::len).sum::<usize>());
+    let mut last_match = 0;
+
+    for m in FORMAT_PLACEHOLDER_REGEX.find_iter(format_str) {
+        let is_escaped = m.start() > 0
+            && &format_str[m.start() - 1..m.start()] == "{"
+            && m.end() < format_str.len()
+            && &format_str[m.end()..=m.end()] == "}";
+
+        if is_escaped {
+            new.push_str(&format_str[last_match..m.start()]);
+            new.push_str(&m.as_str()[1..m.as_str().len() - 1]);
+            last_match = m.end();
+            continue;
+        }
+
+        let index_str = &format_str[m.start() + 1..m.end() - 1];
+
+        let index: usize = index_str
+            .parse::<usize>()
+            .map_err(|e| EvalError::ValueError {
+                message: format!("Invalid format placeholder index '{index_str}': {e}"),
+            })?;
+        if index >= fmt_args.len() {
+            return Err(EvalError::ArgumentCount {
+                expected: index + 1,
+                got: args.len(),
+            });
+        }
+        let replacement = &fmt_args[index];
+
+        new.push_str(&format_str[last_match..m.start()]);
+        new.push_str(replacement);
+        last_match = m.end();
+    }
+    new.push_str(&format_str[last_match..]);
+
+    Ok(Value::String(Cow::Owned(new)))
 }
 
 fn base64_encode(args: FnArgs<'_>) -> FnResult<'_> {
@@ -382,4 +549,204 @@ fn into_int(args: FnArgs<'_>) -> FnResult<'_> {
 
 fn into_float(args: FnArgs<'_>) -> FnResult<'_> {
     numeric_convert(args, |v| f64::try_from(v).ok(), Value::Float)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format() {
+        let args = [
+            Value::String("Hello, {0}! You have {1} new messages.".into()),
+            Value::String("Alice".into()),
+            Value::Int(5),
+        ];
+
+        let result = format(&args).unwrap();
+
+        assert_eq!(
+            result,
+            Value::String("Hello, Alice! You have 5 new messages.".into())
+        );
+    }
+
+    #[test]
+    fn test_format_escaped_braces() {
+        let args = [
+            Value::String("This is a literal brace: {{0}}. Placeholder: {0}".into()),
+            Value::String("test".into()),
+        ];
+
+        let result = format(&args).unwrap();
+
+        assert_eq!(
+            result,
+            Value::String("This is a literal brace: {0}. Placeholder: test".into())
+        );
+    }
+
+    #[test]
+    fn test_format_placeholder_oob() {
+        let args = [Value::String("Invalid placeholder: {123}".into())];
+        let result = format(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_matches() {
+        let args = [
+            Value::String("hello world".into()),
+            Value::String(r"^hello\s\w+$".into()),
+        ];
+
+        let result = matches(&args).unwrap();
+
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[test]
+    fn test_matches_invalid_regex() {
+        let args = [
+            Value::String("test".into()),
+            Value::String(r"invalid(regex".into()),
+        ];
+
+        let result = matches(&args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_base64_encode_decode() {
+        let original = "Hello, world!";
+        let encode_args = [Value::String(original.into())];
+        let encoded = base64_encode(&encode_args).unwrap();
+        let decode_args = [encoded];
+        let decoded = base64_decode(&decode_args).unwrap();
+        assert_eq!(decoded, Value::String(original.into()));
+    }
+
+    #[test]
+    fn test_len() {
+        let args = [Value::String("hello".into())];
+        let result = len(&args).unwrap();
+        assert_eq!(result, Value::Int(5));
+
+        let args = [Value::Array(vec![
+            Value::Int(1),
+            Value::Int(2),
+            Value::Int(3),
+        ])];
+        let result = len(&args).unwrap();
+        assert_eq!(result, Value::Int(3));
+    }
+
+    #[test]
+    fn test_contains() {
+        let args = [
+            Value::String("hello world".into()),
+            Value::String("world".into()),
+        ];
+        let result = contains(&args).unwrap();
+        assert_eq!(result, Value::Bool(true));
+
+        let args = [
+            Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]),
+            Value::Int(2),
+        ];
+        let result = contains(&args).unwrap();
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[test]
+    fn test_replace() {
+        let args = [
+            Value::String("the quick brown fox".into()),
+            Value::String("quick".into()),
+            Value::String("lazy".into()),
+        ];
+        let result = replace(&args).unwrap();
+        assert_eq!(result, Value::String("the lazy brown fox".into()));
+    }
+
+    #[test]
+    fn test_type_conversions() {
+        let args = [Value::Int(42)];
+        let result = into_string(&args).unwrap();
+        assert_eq!(result, Value::String("42".into()));
+
+        let args = [Value::String("true".into())];
+        let result = into_bool(&args).unwrap();
+        assert_eq!(result, Value::Bool(true));
+
+        let args = [Value::String("3.12".into())];
+        let result = into_float(&args).unwrap();
+        assert_eq!(result, Value::Float(3.12));
+    }
+
+    #[test]
+    fn test_starts_with() {
+        let args = [
+            Value::String("hello world".into()),
+            Value::String("hello".into()),
+        ];
+        let result = starts_with(&args).unwrap();
+        assert_eq!(result, Value::Bool(true));
+
+        let args = [
+            Value::String("hello world".into()),
+            Value::String("world".into()),
+        ];
+        let result = starts_with(&args).unwrap();
+        assert_eq!(result, Value::Bool(false));
+    }
+
+    #[test]
+    fn test_ends_with() {
+        let args = [
+            Value::String("hello world".into()),
+            Value::String("world".into()),
+        ];
+        let result = ends_with(&args).unwrap();
+        assert_eq!(result, Value::Bool(true));
+
+        let args = [
+            Value::String("hello world".into()),
+            Value::String("hello".into()),
+        ];
+        let result = ends_with(&args).unwrap();
+        assert_eq!(result, Value::Bool(false));
+    }
+
+    #[test]
+    fn test_join() {
+        let args = [
+            Value::Array(vec![
+                Value::String("apple".into()),
+                Value::String("banana".into()),
+                Value::String("cherry".into()),
+            ]),
+            Value::String(", ".into()),
+        ];
+        let result = join(&args).unwrap();
+        assert_eq!(result, Value::String("apple, banana, cherry".into()));
+    }
+
+    #[test]
+    fn test_split() {
+        let args = [
+            Value::String("apple,banana,cherry".into()),
+            Value::String(",".into()),
+        ];
+        let result = split(&args).unwrap();
+        assert_eq!(
+            result,
+            Value::Array(vec![
+                Value::String("apple".into()),
+                Value::String("banana".into()),
+                Value::String("cherry".into()),
+            ])
+        );
+    }
 }
