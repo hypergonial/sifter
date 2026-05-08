@@ -3,6 +3,9 @@ use std::{
     hash::BuildHasher,
 };
 
+#[cfg(feature = "indexmap")]
+use indexmap::IndexMap;
+
 use crate::Value;
 
 /// A trait representing a JSON object map, which is a mapping from string keys to JSON values.
@@ -146,6 +149,51 @@ impl<V: JsonValue> JsonMap<V> for BTreeMap<String, V> {
 
     fn remove_entry(&mut self, key: &str) -> Option<(String, V)> {
         self.remove_entry(key)
+    }
+
+    fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a V)>
+    where
+        V: 'a,
+    {
+        self.iter()
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = (&'a String, &'a mut V)>
+    where
+        V: 'a,
+    {
+        self.iter_mut()
+    }
+}
+
+#[cfg(feature = "indexmap")]
+impl<V: JsonValue, S: BuildHasher> JsonMap<V> for IndexMap<String, V, S> {
+    fn get(&self, key: &str) -> Option<&V> {
+        self.get(key)
+    }
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut V> {
+        self.get_mut(key)
+    }
+
+    fn insert(&mut self, key: String, value: V) -> Option<V> {
+        self.insert(key, value)
+    }
+
+    fn contains_key(&self, key: &str) -> bool {
+        self.contains_key(key)
+    }
+
+    fn get_key_value(&self, key: &str) -> Option<(&String, &V)> {
+        self.get_key_value(key)
+    }
+
+    fn remove(&mut self, key: &str) -> Option<V> {
+        self.shift_remove(key)
+    }
+
+    fn remove_entry(&mut self, key: &str) -> Option<(String, V)> {
+        self.shift_remove_entry(key)
     }
 
     fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a V)>

@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
-
+use indexmap::IndexMap;
 use pyo3::{
     Borrowed, Bound, FromPyObject, IntoPyObject, IntoPyObjectExt, PyAny, PyResult,
-    types::{PyAnyMethods, PyMapping, PyMappingMethods, PySequenceMethods, PyTypeMethods},
+    types::{PyAnyMethods, PyDict, PyMapping, PyMappingMethods, PySequenceMethods, PyTypeMethods},
 };
 use sosaku::{JsonValue, Value};
 
@@ -15,7 +14,7 @@ pub enum PyJsonValue {
     Float(f64),
     String(String),
     Array(Vec<Self>),
-    Object(BTreeMap<String, Self>),
+    Object(IndexMap<String, Self>),
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for PyJsonValue {
@@ -41,7 +40,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for PyJsonValue {
             }
             Ok(Self::Array(vec))
         } else if let Ok(mapping) = ob.cast::<PyMapping>() {
-            let mut map = BTreeMap::new();
+            let mut map = IndexMap::new();
             for key in mapping.keys()? {
                 let key_str: String = key.extract()?;
                 let value: Self = mapping.get_item(key)?.extract()?;
@@ -71,7 +70,13 @@ impl<'py> IntoPyObject<'py> for PyJsonValue {
             Self::Float(f) => Ok(f.into_bound_py_any(py)?),
             Self::String(s) => Ok(s.into_bound_py_any(py)?),
             Self::Array(vec) => Ok(vec.into_bound_py_any(py)?),
-            Self::Object(map) => Ok(map.into_bound_py_any(py)?),
+            Self::Object(map) => {
+                let py_dict = PyDict::new(py);
+                for (key, value) in map {
+                    py_dict.set_item(key, value.into_pyobject(py)?)?;
+                }
+                Ok(py_dict.into_any())
+            }
         }
     }
 }
@@ -93,7 +98,7 @@ impl<'a> From<Value<'a>> for PyJsonValue {
 }
 
 impl JsonValue for PyJsonValue {
-    type MapType = BTreeMap<String, Self>;
+    type MapType = IndexMap<String, Self>;
 
     fn null() -> Self {
         Self::Null

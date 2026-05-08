@@ -482,6 +482,7 @@ name = "sosaku"
 version = "0.6.0"
 dependencies = [
  "base64",
+ "indexmap",
  "nom",
  "regex",
  "serde",
@@ -504,6 +505,7 @@ dependencies = [
 name = "sosaku-py"
 version = "0.6.0"
 dependencies = [
+ "indexmap",
  "pyo3",
  "sosaku",
 ]

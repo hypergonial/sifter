@@ -13,6 +13,7 @@ repository = "https://github.com/hypergonial/sosaku"
 
 [workspace.dependencies]
 sosaku = { version = "0.6.0", path = "sosaku" }
+indexmap = "2.14.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

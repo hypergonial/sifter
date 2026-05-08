@@ -17,10 +17,11 @@ workspace = true
 nom = "8.0"
 regex = "1.12"
 thiserror = "2"
+base64 = "0.22"
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 serde_yaml = { version = "0.9", optional = true }
-base64 = "0.22"
+indexmap = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "parking_lot"] }
@@ -32,3 +33,5 @@ serde_json = ["dep:serde", "dep:serde_json"]
 serde = ["serde_json"]
 # Adds 'sosaku::normalize_into_json' function for converting serde_yaml::Value to serde_json::Value
 serde_yaml = ["serde", "dep:serde_yaml"]
+# Adds JsonMap impl for IndexMap<String, JsonValue>
+indexmap = ["dep:indexmap"]

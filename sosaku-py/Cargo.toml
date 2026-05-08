@@ -18,5 +18,6 @@ name = "sosaku"
 crate-type = ["cdylib"]
 
 [dependencies]
-sosaku.workspace = true
+sosaku = { workspace = true, features = ["indexmap"] }
 pyo3 = "0.28"
+indexmap.workspace = true
