@@ -76,3 +76,17 @@ def test_var_replace():
     test_json = var_access.replace(test_json, {"new": "value"})
     assert var_access.access(test_json) == {"new": "value"}
     assert test_json["foo"]["bar"] == {"new": "value"}
+
+
+def test_var_replace_retains_order():
+    test_json: dict[str, JSONValue] = {
+        "x": 42,
+        "a": "hello",
+        "b": True,
+        "foo": {"bar": 123, "baz": "world", "qux": {"nested": [1, 2, 3]}},
+    }
+
+    var_access = sosaku.VarAccess("x")
+    test_json = var_access.replace(test_json, True)
+    assert var_access.access(test_json) is True
+    assert list(test_json.keys()) == ["x", "a", "b", "foo"]
